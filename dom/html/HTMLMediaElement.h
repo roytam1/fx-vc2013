@@ -1602,11 +1602,8 @@ public:
     uint32_t mCount;
   };
 private:
-  // Total time an MSE video has spent playing
+  // Total time a video has spent playing.
   TimeDurationAccumulator mPlayTime;
-
-  // Time spent between video load and video playback.
-  TimeDurationAccumulator mJoinLatency;
 
   // Indicates if user has interacted with the element.
   // Used to block autoplay when disabled.
