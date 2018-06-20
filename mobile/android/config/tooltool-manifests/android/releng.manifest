@@ -1,0 +1,74 @@
+[
+{
+"version": "Android NDK r11b",
+"size": 138385112,
+"visibility": "internal",
+"digest": "eb397bfa09b4e2d64070c64c29946a9ed6a468b87675aa9e3a3c5a620144439bb20fa387b9becbb09c6dcf3d4df46ee2147a86ce73b196430db04d30edf9b471",
+"algorithm": "sha512",
+"filename": "android-ndk.tar.bz2",
+"unpack": true
+},
+{
+"versions": [
+  "Android SDK 6.0 / API 23",
+  "Android tools r24.4",
+  "Android build tools 23.0.1",
+  "Android Support Repository (Support Library 23.0.1)",
+  "Google Support Repository (Google Play Services 8.1.0)"
+],
+"size": 510613380,
+"visibility": "internal", 
+"digest": "cdc5d661e5879ba9095c506090e1ed372a810ba073cf4e3e2c680b8d6a35016161d00c5f4b4859fe97a0decab816e9b882255271ed385b311304ad8cd600ac16",
+"algorithm": "sha512",
+"filename": "android-sdk-linux.tar.xz",
+"unpack": true
+},
+{
+"size": 167175,
+"visibility": "public",
+"digest": "0b71a936edf5bd70cf274aaa5d7abc8f77fe8e7b5593a208f805cc9436fac646b9c4f0b43c2b10de63ff3da671497d35536077ecbc72dba7f8159a38b580f831",
+"algorithm": "sha512",
+"filename": "sccache.tar.bz2",
+"unpack": true
+},
+{
+"size": 4906080,
+"visibility": "public",
+"unpack": true,
+"digest": "d735544e039da89382c53b2302b7408d4610247b4f8b5cdc5a4d5a8ec5470947b19e8ea7f7a37e78222e661347e394e0030d81f41534138b527b14e9c4e55634",
+"algorithm": "sha512",
+"filename": "jsshell.tar.xz"
+},
+{
+"version": "gcc 4.8.5 + PR64905",
+"size": 80160264,
+"digest": "c1a9dc9da289b8528874d16300b9d13a997cec99195bb0bc46ff665216d8535d6d6cb5af6b4b1f2749af6815dab12e703fdb3849014e5c23a70eff351a0baf4e",
+"algorithm": "sha512",
+"filename": "gcc.tar.xz",
+"unpack": true
+},
+{
+"size": 30899096,
+"visibility": "public",
+"digest": "ac9f5f95d11580d3dbeff87e80a585fe4d324b270dabb91b1165686acab47d99fa6651074ab0be09420239a5d6af38bb2c539506962a7b44e0ed4d080bba2953",
+"algorithm": "sha512",
+"filename": "java_home-1.7.0-openjdk-1.7.0.85.x86_64.tar.xz",
+"unpack": true
+},
+{
+"algorithm": "sha512",
+"visibility": "public",
+"filename": "jcentral.tar.xz",
+"unpack": true,
+"digest": "43754910576cf6173f0dcb215ec7988f2a30dbfe32050f53ac7a9088b8b878c3ead80e02afc1dc31e229386116c82e88a403a309e5b5695f0b74f5defb13dec7",
+"size": 42832932
+},
+{
+"algorithm": "sha512",
+"visibility": "public",
+"filename": "gradle.tar.xz",
+"unpack": true,
+"digest": "5ebf4c34e43faba54d189156a1d590f1e99775d1004f18cb7619d9975a5c2bd252021e470abd82bceb28580c1a22dd5501320062a0d83b5588b84633ac30c494",
+"size": 51936348
+}
+]
