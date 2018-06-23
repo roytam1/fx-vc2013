@@ -1396,6 +1396,7 @@ void
 MediaFormatReader::SkipVideoDemuxToNextKeyFrame(media::TimeUnit aTimeThreshold)
 {
   MOZ_ASSERT(OnTaskQueue());
+  MOZ_ASSERT(mVideo.HasPromise());
   LOG("Skipping up to %lld", aTimeThreshold.ToMicroseconds());
 
   // Cancel any pending demux request and pending demuxed samples.
@@ -1412,6 +1413,13 @@ MediaFormatReader::SkipVideoDemuxToNextKeyFrame(media::TimeUnit aTimeThreshold)
     LOGV("Internal Seek pending, cancelling it");
   }
   Reset(TrackInfo::kVideoTrack);
+
+  if (mVideo.mError) {
+    // We have flushed the decoder, and we are in error state, we can
+    // immediately reject the promise as there is nothing more to do.
+    mVideo.RejectPromise(DECODE_ERROR, __func__);
+    return;
+  }
 
   mSkipRequest.Begin(mVideo.mTrackDemuxer->SkipToNextRandomAccessPoint(aTimeThreshold)
                           ->Then(OwnerThread(), __func__, this,
