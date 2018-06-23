@@ -48,6 +48,7 @@ DevToolsModules(
     'Loader.jsm',
     'Parser.jsm',
     'path.js',
+    'protocol.js',
     'system.js',
     'ThreadSafeDevToolsUtils.js',
 )
