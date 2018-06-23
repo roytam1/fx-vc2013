@@ -5,7 +5,7 @@
 "use strict";
 
 const {Cc, Ci, Cu} = require("chrome");
-const {angleUtils} = require("devtools/shared/css-angle");
+const {angleUtils} = require("devtools/client/shared/css-angle");
 const {colorUtils} = require("devtools/client/shared/css-color");
 const Services = require("Services");
 const EventEmitter = require("devtools/shared/event-emitter");
