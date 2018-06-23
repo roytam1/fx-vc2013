@@ -1484,22 +1484,22 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleList
       mListStyleImage->LockImage();
   }
 
-  void GetListStyleType(nsSubstring& aType) const { aType = mListStyleType; }
+  void GetListStyleType(nsSubstring& aType) const { mCounterStyle->GetStyleName(aType); }
   mozilla::CounterStyle* GetCounterStyle() const
   {
     return mCounterStyle.get();
   }
-  void SetListStyleType(const nsSubstring& aType,
-                        mozilla::CounterStyle* aStyle)
+  void SetCounterStyle(mozilla::CounterStyle* aStyle)
   {
-    mListStyleType = aType;
+    // NB: This function is called off-main-thread during parallel restyle, but
+    // only with builtin styles that use dummy refcounting.
+    MOZ_ASSERT(NS_IsMainThread() || aStyle->IsDependentStyle());
     mCounterStyle = aStyle;
   }
   void SetListStyleType(const nsSubstring& aType,
                         nsPresContext* aPresContext)
   {
-    SetListStyleType(aType, aPresContext->
-                     CounterStyleManager()->BuildCounterStyle(aType));
+    SetCounterStyle(aPresContext->CounterStyleManager()->BuildCounterStyle(aType));
   }
 
   const nsStyleQuoteValues::QuotePairArray& GetQuotePairs() const;
@@ -1511,7 +1511,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleList
 
   uint8_t   mListStylePosition;         // [inherited]
 private:
-  nsString  mListStyleType;             // [inherited]
   RefPtr<mozilla::CounterStyle> mCounterStyle; // [inherited]
   RefPtr<imgRequestProxy> mListStyleImage; // [inherited]
   RefPtr<nsStyleQuoteValues> mQuotes;   // [inherited]
