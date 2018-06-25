@@ -279,7 +279,7 @@ MediaDecoderReaderWrapper::IsRequestingAudioData() const
 }
 
 bool
-MediaDecoderReaderWrapper::IsRequestingVidoeData() const
+MediaDecoderReaderWrapper::IsRequestingVideoData() const
 {
   MOZ_ASSERT(mOwnerThread->IsCurrentThreadIn());
   return mVideoDataRequest.Exists();
@@ -330,7 +330,7 @@ MediaDecoderReaderWrapper::SetIdle()
 }
 
 void
-MediaDecoderReaderWrapper::ResetDecode()
+MediaDecoderReaderWrapper::ResetDecode(TargetQueues aQueues)
 {
   MOZ_ASSERT(mOwnerThread->IsCurrentThreadIn());
 
@@ -338,7 +338,9 @@ MediaDecoderReaderWrapper::ResetDecode()
   mVideoDataRequest.DisconnectIfExists();
 
   nsCOMPtr<nsIRunnable> r =
-    NewRunnableMethod(mReader, &MediaDecoderReader::ResetDecode);
+    NewRunnableMethod<TargetQueues>(mReader,
+                                    &MediaDecoderReader::ResetDecode,
+                                    aQueues);
   mReader->OwnerThread()->Dispatch(r.forget());
 }
 

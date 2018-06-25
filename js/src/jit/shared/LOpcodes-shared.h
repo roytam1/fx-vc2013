@@ -21,8 +21,8 @@
     _(SimdBox)                      \
     _(SimdUnbox)                    \
     _(SimdSplatX4)                  \
-    _(Int32x4)                      \
-    _(Float32x4)                    \
+    _(Simd128Int)                   \
+    _(Simd128Float)                 \
     _(SimdAllTrue)                  \
     _(SimdAnyTrue)                  \
     _(SimdReinterpretCast)          \
@@ -142,8 +142,11 @@
     _(AbsD)                         \
     _(AbsF)                         \
     _(ClzI)                         \
+    _(ClzI64)                       \
     _(CtzI)                         \
+    _(CtzI64)                       \
     _(PopcntI)                      \
+    _(PopcntI64)                    \
     _(SqrtD)                        \
     _(SqrtF)                        \
     _(Atan2D)                       \
@@ -155,6 +158,7 @@
     _(MathFunctionD)                \
     _(MathFunctionF)                \
     _(NotI)                         \
+    _(NotI64)                       \
     _(NotD)                         \
     _(NotF)                         \
     _(NotO)                         \

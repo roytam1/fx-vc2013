@@ -9,8 +9,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.util.Log;
+import ch.boye.httpclientandroidlib.HttpHeaders;
 import ch.boye.httpclientandroidlib.HttpResponse;
 import ch.boye.httpclientandroidlib.client.ClientProtocolException;
+import ch.boye.httpclientandroidlib.client.methods.HttpRequestBase;
+import ch.boye.httpclientandroidlib.impl.client.DefaultHttpClient;
 import org.mozilla.gecko.GeckoProfile;
 import org.mozilla.gecko.GeckoSharedPrefs;
 import org.mozilla.gecko.preferences.GeckoPreferences;
@@ -19,14 +22,17 @@ import org.mozilla.gecko.sync.net.BaseResource;
 import org.mozilla.gecko.sync.net.BaseResourceDelegate;
 import org.mozilla.gecko.sync.net.Resource;
 import org.mozilla.gecko.telemetry.stores.TelemetryPingStore;
+import org.mozilla.gecko.util.DateUtil;
 import org.mozilla.gecko.util.NetworkUtils;
 import org.mozilla.gecko.util.StringUtils;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.security.GeneralSecurityException;
+import java.util.Calendar;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -85,11 +91,11 @@ public class TelemetryUploadService extends IntentService {
         }
 
         final String serverSchemeHostPort = getServerSchemeHostPort(context);
-        final HashSet<Integer> successfulUploadIDs = new HashSet<>(pingsToUpload.size()); // used for side effects.
+        final HashSet<String> successfulUploadIDs = new HashSet<>(pingsToUpload.size()); // used for side effects.
         final PingResultDelegate delegate = new PingResultDelegate(successfulUploadIDs);
         for (final TelemetryPing ping : pingsToUpload) {
             // TODO: It'd be great to re-use the same HTTP connection for each upload request.
-            delegate.setPingID(ping.getUniqueID());
+            delegate.setDocID(ping.getDocID());
             final String url = serverSchemeHostPort + "/" + ping.getURLPath();
             uploadPayload(url, ping.getPayload(), delegate);
 
@@ -225,13 +231,13 @@ public class TelemetryUploadService extends IntentService {
         private static final int SOCKET_TIMEOUT_MILLIS = (int) TimeUnit.SECONDS.toMillis(30);
         private static final int CONNECTION_TIMEOUT_MILLIS = (int) TimeUnit.SECONDS.toMillis(30);
 
-        /** The store ID of the ping currently being uploaded. Use {@link #getPingID()} to access it. */
-        private int pingID = -1;
-        private final HashSet<Integer> successfulUploadIDs;
+        /** The store ID of the ping currently being uploaded. Use {@link #getDocID()} to access it. */
+        private String docID = null;
+        private final Set<String> successfulUploadIDs;
 
         private boolean hadConnectionError = false;
 
-        public PingResultDelegate(final HashSet<Integer> successfulUploadIDs) {
+        public PingResultDelegate(final Set<String> successfulUploadIDs) {
             super();
             this.successfulUploadIDs = successfulUploadIDs;
         }
@@ -246,15 +252,15 @@ public class TelemetryUploadService extends IntentService {
             return CONNECTION_TIMEOUT_MILLIS;
         }
 
-        private int getPingID() {
-            if (pingID < 0) {
+        private String getDocID() {
+            if (docID == null) {
                 throw new IllegalStateException("Expected ping ID to have been updated before retrieval");
             }
-            return pingID;
+            return docID;
         }
 
-        public void setPingID(final int id) {
-            pingID = id;
+        public void setDocID(final String id) {
+            docID = id;
         }
 
         @Override
@@ -268,7 +274,7 @@ public class TelemetryUploadService extends IntentService {
             switch (status) {
                 case 200:
                 case 201:
-                    successfulUploadIDs.add(getPingID());
+                    successfulUploadIDs.add(getDocID());
                     break;
                 default:
                     Log.w(LOGTAG, "Telemetry upload failure. HTTP status: " + status);
@@ -299,6 +305,12 @@ public class TelemetryUploadService extends IntentService {
 
         private boolean hadConnectionError() {
             return hadConnectionError;
+        }
+
+        @Override
+        public void addHeaders(final HttpRequestBase request, final DefaultHttpClient client) {
+            super.addHeaders(request, client);
+            request.addHeader(HttpHeaders.DATE, DateUtil.getDateInHTTPFormat(Calendar.getInstance().getTime()));
         }
     }
 

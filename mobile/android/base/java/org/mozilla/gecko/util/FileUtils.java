@@ -17,6 +17,10 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.Charset;
+import java.util.Comparator;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -198,6 +202,58 @@ public class FileUtils {
             // OutputStreamWriter.close can throw before closing the
             // underlying stream. For safety, we close here too.
             outputStream.close();
+        }
+    }
+
+    public static class FilenameWhitelistFilter implements FilenameFilter {
+        private final Set<String> mFilenameWhitelist;
+
+        public FilenameWhitelistFilter(final Set<String> filenameWhitelist) {
+            mFilenameWhitelist = filenameWhitelist;
+        }
+
+        @Override
+        public boolean accept(final File dir, final String filename) {
+            return mFilenameWhitelist.contains(filename);
+        }
+    }
+
+    public static class FilenameRegexFilter implements FilenameFilter {
+        private final Pattern mPattern;
+
+        // Each time `Pattern.matcher` is called, a new matcher is created. We can avoid the excessive object creation
+        // by caching the returned matcher and calling `Matcher.reset` on it. Since Matcher's are not thread safe,
+        // this assumes `FilenameFilter.accept` is not run in parallel (which, according to the source, it is not).
+        private Matcher mCachedMatcher;
+
+        public FilenameRegexFilter(final Pattern pattern) {
+            mPattern = pattern;
+        }
+
+        @Override
+        public boolean accept(final File dir, final String filename) {
+            if (mCachedMatcher == null) {
+                mCachedMatcher = mPattern.matcher(filename);
+            } else {
+                mCachedMatcher.reset(filename);
+            }
+            return mCachedMatcher.matches();
+        }
+    }
+
+    public static class FileLastModifiedComparator implements Comparator<File> {
+        @Override
+        public int compare(final File lhs, final File rhs) {
+            // Long.compare is API 19+.
+            final long lhsModified = lhs.lastModified();
+            final long rhsModified = rhs.lastModified();
+            if (lhsModified < rhsModified) {
+                return -1;
+            } else if (lhsModified == rhsModified) {
+                return 0;
+            } else {
+                return 1;
+            }
         }
     }
 }

@@ -287,6 +287,9 @@ public:
 
   virtual bool DeallocPPrintingChild(PPrintingChild*) override;
 
+  virtual PSendStreamChild* AllocPSendStreamChild() override;
+  virtual bool DeallocPSendStreamChild(PSendStreamChild*) override;
+
   virtual PScreenManagerChild*
   AllocPScreenManagerChild(uint32_t* aNumberOfScreens,
                            float* aSystemDefaultScale,
@@ -517,7 +520,8 @@ public:
                         const uint32_t& aAction) override;
 
   virtual bool RecvEndDragSession(const bool& aDoneDrag,
-                                  const bool& aUserCancelled) override;
+                                  const bool& aUserCancelled,
+                                  const mozilla::LayoutDeviceIntPoint& aEndDragPoint) override;
 
   virtual bool
   RecvPush(const nsCString& aScope,

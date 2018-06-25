@@ -298,8 +298,6 @@ pref("browser.urlbar.doubleClickSelectsAll", false);
 pref("browser.urlbar.autoFill", true);
 pref("browser.urlbar.autoFill.typed", true);
 
-pref("browser.urlbar.unifiedcomplete", true);
-
 // 0: Match anywhere (e.g., middle of words)
 // 1: Match on word boundaries and then try matching anywhere
 // 2: Match only on word boundaries (e.g., after / or .)
@@ -1066,6 +1064,11 @@ pref("services.sync.prefs.sync.browser.tabs.warnOnClose", true);
 pref("services.sync.prefs.sync.browser.tabs.warnOnOpen", true);
 pref("services.sync.prefs.sync.browser.urlbar.autocomplete.enabled", true);
 pref("services.sync.prefs.sync.browser.urlbar.maxRichResults", true);
+pref("services.sync.prefs.sync.browser.urlbar.suggest.bookmark", true);
+pref("services.sync.prefs.sync.browser.urlbar.suggest.history", true);
+pref("services.sync.prefs.sync.browser.urlbar.suggest.history.onlyTyped", true);
+pref("services.sync.prefs.sync.browser.urlbar.suggest.openpage", true);
+pref("services.sync.prefs.sync.browser.urlbar.suggest.searches", true);
 pref("services.sync.prefs.sync.dom.disable_open_during_load", true);
 pref("services.sync.prefs.sync.dom.disable_window_flip", true);
 pref("services.sync.prefs.sync.dom.disable_window_move_resize", true);
@@ -1383,6 +1386,7 @@ pref("browser.tabs.crashReporting.email", "");
 #ifndef MOZ_MULET
 pref("layers.async-pan-zoom.enabled", true);
 #endif
+pref("apz.velocity_bias", "0.0");
 
 // Enable e10s add-on interposition by default.
 pref("extensions.interposition.enabled", true);

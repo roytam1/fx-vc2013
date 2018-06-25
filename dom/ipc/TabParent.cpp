@@ -24,6 +24,7 @@
 #include "mozilla/plugins/PluginWidgetParent.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/Hal.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/ipc/DocumentRendererParent.h"
@@ -85,7 +86,6 @@
 #include "nsNetCID.h"
 #include "nsIAuthInformation.h"
 #include "nsIAuthPromptCallback.h"
-#include "SourceSurfaceRawData.h"
 #include "nsAuthInformationHolder.h"
 #include "nsICancelable.h"
 #include "gfxPrefs.h"
@@ -469,6 +469,13 @@ TabParent::DestroyInternal()
   if (RenderFrameParent* frame = GetRenderFrame()) {
     RemoveTabParentFromTable(frame->GetLayersId());
     frame->Destroy();
+
+    // Notify our layer tree update observer that we're going away. It's
+    // possible that we race with a notification and there can be an
+    // LayerTreeUpdateRunnable on the main thread's event queue with a pointer
+    // to us. However, our actual destruction won't be until yet another event
+    // *after* that one is processed, so this should be safe.
+    mLayerUpdateObserver->TabParentDestroyed();
   }
 
   // Let all PluginWidgets know we are tearing down. Prevents
@@ -616,6 +623,37 @@ TabParent::RecvMoveFocus(const bool& aForward, const bool& aForDocumentNavigatio
     fm->MoveFocus(nullptr, frame, type, nsIFocusManager::FLAG_BYKEY,
                   getter_AddRefs(dummy));
   }
+  return true;
+}
+
+bool
+TabParent::RecvSizeShellTo(const uint32_t& aFlags, const int32_t& aWidth, const int32_t& aHeight,
+                           const int32_t& aShellItemWidth, const int32_t& aShellItemHeight)
+{
+  NS_ENSURE_TRUE(mFrameElement, true);
+
+  nsCOMPtr<nsIDocShell> docShell = mFrameElement->OwnerDoc()->GetDocShell();
+  NS_ENSURE_TRUE(docShell, true);
+
+  nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
+  nsresult rv = docShell->GetTreeOwner(getter_AddRefs(treeOwner));
+  NS_ENSURE_SUCCESS(rv, true);
+
+  int32_t width = aWidth;
+  int32_t height = aHeight;
+
+  if (aFlags & nsIEmbeddingSiteWindow::DIM_FLAGS_IGNORE_CX) {
+    width = mDimensions.width;
+  }
+
+  if (aFlags & nsIEmbeddingSiteWindow::DIM_FLAGS_IGNORE_CY) {
+    height = mDimensions.height;
+  }
+
+  nsCOMPtr<nsIXULWindow> xulWin(do_GetInterface(treeOwner));
+  NS_ENSURE_TRUE(xulWin, true);
+  xulWin->SizeShellToWithLimit(width, height, aShellItemWidth, aShellItemHeight);
+
   return true;
 }
 
@@ -814,19 +852,44 @@ TabParent::RecvSetDimensions(const uint32_t& aFlags,
   nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = do_QueryInterface(treeOwner);
   NS_ENSURE_TRUE(treeOwnerAsWin, true);
 
+  // We only care about the parameters that actually changed, see more
+  // details in TabChild::SetDimensions.
+  int32_t unused;
+  int32_t x = aX;
+  if (aFlags & nsIEmbeddingSiteWindow::DIM_FLAGS_IGNORE_X) {
+    treeOwnerAsWin->GetPosition(&x, &unused);
+  }
+
+  int32_t y = aY;
+  if (aFlags & nsIEmbeddingSiteWindow::DIM_FLAGS_IGNORE_Y) {
+    treeOwnerAsWin->GetPosition(&unused, &y);
+  }
+
+  int32_t cx = aCx;
+  if (aFlags & nsIEmbeddingSiteWindow::DIM_FLAGS_IGNORE_CX) {
+    treeOwnerAsWin->GetSize(&cx, &unused);
+  }
+
+  int32_t cy = aCy;
+  if (aFlags & nsIEmbeddingSiteWindow::DIM_FLAGS_IGNORE_CY) {
+    treeOwnerAsWin->GetSize(&unused, &cy);
+  }
+
   if (aFlags & nsIEmbeddingSiteWindow::DIM_FLAGS_POSITION &&
       aFlags & nsIEmbeddingSiteWindow::DIM_FLAGS_SIZE_OUTER) {
-    treeOwnerAsWin->SetPositionAndSize(aX, aY, aCx, aCy, true);
+    treeOwnerAsWin->SetPositionAndSize(x, y, cx, cy, true);
     return true;
   }
 
   if (aFlags & nsIEmbeddingSiteWindow::DIM_FLAGS_POSITION) {
-    treeOwnerAsWin->SetPosition(aX, aY);
+    treeOwnerAsWin->SetPosition(x, y);
+    mUpdatedDimensions = false;
+    UpdatePosition();
     return true;
   }
 
   if (aFlags & nsIEmbeddingSiteWindow::DIM_FLAGS_SIZE_OUTER) {
-    treeOwnerAsWin->SetSize(aCx, aCy, true);
+    treeOwnerAsWin->SetSize(cx, cy, true);
     return true;
   }
 
@@ -932,12 +995,12 @@ TabParent::ThemeChanged()
 }
 
 void
-TabParent::HandleAccessKey(nsTArray<uint32_t>& aCharCodes,
-                           const bool& aIsTrusted,
+TabParent::HandleAccessKey(const WidgetKeyboardEvent& aEvent,
+                           nsTArray<uint32_t>& aCharCodes,
                            const int32_t& aModifierMask)
 {
   if (!mIsDestroyed) {
-    Unused << SendHandleAccessKey(aCharCodes, aIsTrusted, aModifierMask);
+    Unused << SendHandleAccessKey(aEvent, aCharCodes, aModifierMask);
   }
 }
 
@@ -1191,7 +1254,7 @@ bool TabParent::SendRealMouseEvent(WidgetMouseEvent& event)
   ApzAwareEventRoutingToChild(&guid, &blockId, nullptr);
 
   if (eMouseMove == event.mMessage) {
-    if (event.reason == WidgetMouseEvent::eSynthesized) {
+    if (event.mReason == WidgetMouseEvent::eSynthesized) {
       return SendSynthMouseMoveEvent(event, guid, blockId);
     } else {
       return SendRealMouseMoveEvent(event, guid, blockId);
@@ -1678,12 +1741,11 @@ TabParent::RecvSetCustomCursor(const nsCString& aCursorData,
     if (mTabSetsCursor) {
       const gfx::IntSize size(aWidth, aHeight);
 
-      RefPtr<gfx::DataSourceSurface> customCursor = new mozilla::gfx::SourceSurfaceRawData();
-      mozilla::gfx::SourceSurfaceRawData* raw = static_cast<mozilla::gfx::SourceSurfaceRawData*>(customCursor.get());
-      raw->InitWrappingData(
-        reinterpret_cast<uint8_t*>(const_cast<nsCString&>(aCursorData).BeginWriting()),
-        size, aStride, static_cast<mozilla::gfx::SurfaceFormat>(aFormat), false);
-      raw->GuaranteePersistance();
+      RefPtr<gfx::DataSourceSurface> customCursor =
+          gfx::CreateDataSourceSurfaceFromData(size,
+                                               static_cast<gfx::SurfaceFormat>(aFormat),
+                                               reinterpret_cast<const uint8_t*>(aCursorData.BeginReading()),
+                                               aStride);
 
       RefPtr<gfxDrawable> drawable = new gfxSurfaceDrawable(customCursor, size);
       nsCOMPtr<imgIContainer> cursorImage(image::ImageOps::CreateFromDrawable(drawable));
@@ -2075,6 +2137,31 @@ TabParent::RecvDispatchAfterKeyboardEvent(const WidgetKeyboardEvent& aEvent)
 }
 
 bool
+TabParent::RecvAccessKeyNotHandled(const WidgetKeyboardEvent& aEvent)
+{
+  NS_ENSURE_TRUE(mFrameElement, true);
+
+  WidgetKeyboardEvent localEvent(aEvent);
+  localEvent.mMessage = eAccessKeyNotFound;
+  localEvent.mAccessKeyForwardedToChild = false;
+
+  // Here we convert the WidgetEvent that we received to an nsIDOMEvent
+  // to be able to dispatch it to the <browser> element as the target element.
+  nsIDocument* doc = mFrameElement->OwnerDoc();
+  nsIPresShell* presShell = doc->GetShell();
+  NS_ENSURE_TRUE(presShell, true);
+
+  if (presShell->CanDispatchEvent()) {
+    nsPresContext* presContext = presShell->GetPresContext();
+    NS_ENSURE_TRUE(presContext, true);
+
+    EventDispatcher::Dispatch(mFrameElement, presContext, &localEvent);
+  }
+
+  return true;
+}
+
+bool
 TabParent::HandleQueryContentEvent(WidgetQueryContentEvent& aEvent)
 {
   nsCOMPtr<nsIWidget> widget = GetWidget();
@@ -2182,6 +2269,10 @@ TabParent::GetTabIdFrom(nsIDocShell *docShell)
 RenderFrameParent*
 TabParent::GetRenderFrame()
 {
+  if (!mLayerUpdateObserver) {
+    mLayerUpdateObserver = new LayerTreeUpdateObserver(this);
+  }
+
   PRenderFrameParent* p = LoneManagedOrNullAsserts(ManagedPRenderFrameParent());
   return static_cast<RenderFrameParent*>(p);
 }
@@ -2837,33 +2928,36 @@ TabParent::NavigateByKey(bool aForward, bool aForDocumentNavigation)
 class LayerTreeUpdateRunnable final
   : public mozilla::Runnable
 {
-  uint64_t mLayersId;
+  RefPtr<LayerTreeUpdateObserver> mUpdateObserver;
   bool mActive;
 
 public:
-  explicit LayerTreeUpdateRunnable(uint64_t aLayersId, bool aActive)
-    : mLayersId(aLayersId), mActive(aActive) {}
+  explicit LayerTreeUpdateRunnable(LayerTreeUpdateObserver* aObs, bool aActive)
+    : mUpdateObserver(aObs), mActive(aActive)
+  {
+    MOZ_ASSERT(!NS_IsMainThread());
+  }
 
 private:
   NS_IMETHOD Run() {
     MOZ_ASSERT(NS_IsMainThread());
-    TabParent* tabParent = TabParent::GetTabParentFromLayersId(mLayersId);
-    if (tabParent) {
+    if (RefPtr<TabParent> tabParent = mUpdateObserver->GetTabParent()) {
       tabParent->LayerTreeUpdate(mActive);
     }
     return NS_OK;
   }
 };
 
-// This observer runs on the compositor thread, so we dispatch a runnable to the
-// main thread to actually dispatch the event.
-class LayerTreeUpdateObserver : public CompositorUpdateObserver
+void
+LayerTreeUpdateObserver::ObserveUpdate(uint64_t aLayersId, bool aActive)
 {
-  virtual void ObserveUpdate(uint64_t aLayersId, bool aActive) {
-    RefPtr<LayerTreeUpdateRunnable> runnable = new LayerTreeUpdateRunnable(aLayersId, aActive);
-    NS_DispatchToMainThread(runnable);
-  }
-};
+  MOZ_ASSERT(!NS_IsMainThread());
+
+  RefPtr<LayerTreeUpdateRunnable> runnable =
+    new LayerTreeUpdateRunnable(this, aActive);
+  NS_DispatchToMainThread(runnable);
+}
+
 
 bool
 TabParent::RequestNotifyLayerTreeReady()
@@ -2874,7 +2968,7 @@ TabParent::RequestNotifyLayerTreeReady()
   } else {
     CompositorBridgeParent::RequestNotifyLayerTreeReady(
       frame->GetLayersId(),
-      new LayerTreeUpdateObserver());
+      mLayerUpdateObserver);
   }
   return true;
 }
@@ -2889,7 +2983,7 @@ TabParent::RequestNotifyLayerTreeCleared()
 
   CompositorBridgeParent::RequestNotifyLayerTreeCleared(
     frame->GetLayersId(),
-    new LayerTreeUpdateObserver());
+    mLayerUpdateObserver);
   return true;
 }
 
@@ -2928,9 +3022,17 @@ TabParent::SwapLayerTreeObservers(TabParent* aOther)
     return;
   }
 
+  // The swap that happens for the observers in CompositorBridgeParent has to
+  // happen in a lock so that an update being processed on the compositor thread
+  // can't grab the layer update observer for the wrong tab parent.
   CompositorBridgeParent::SwapLayerTreeObservers(
     rfp->GetLayersId(),
     otherRfp->GetLayersId());
+
+  // No need for a lock, destruction can only happen on the main thread and we
+  // only read mLayerUpdateObserver::mTabParent on the main thread.
+  Swap(mLayerUpdateObserver, aOther->mLayerUpdateObserver);
+  mLayerUpdateObserver->SwapTabParent(aOther->mLayerUpdateObserver);
 }
 
 bool
@@ -3122,7 +3224,8 @@ TabParent::RecvInvokeDragSession(nsTArray<IPCDataTransfer>&& aTransfers,
   nsIPresShell* shell = mFrameElement->OwnerDoc()->GetShell();
   if (!shell) {
     if (Manager()->IsContentParent()) {
-      Unused << Manager()->AsContentParent()->SendEndDragSession(true, true);
+      Unused << Manager()->AsContentParent()->SendEndDragSession(true, true,
+                                                                 LayoutDeviceIntPoint());
     }
     return true;
   }
@@ -3144,14 +3247,10 @@ TabParent::RecvInvokeDragSession(nsTArray<IPCDataTransfer>&& aTransfers,
     mDnDVisualization = nullptr;
   } else {
     mDnDVisualization =
-      new mozilla::gfx::SourceSurfaceRawData();
-    mozilla::gfx::SourceSurfaceRawData* raw =
-      static_cast<mozilla::gfx::SourceSurfaceRawData*>(mDnDVisualization.get());
-    raw->InitWrappingData(
-      reinterpret_cast<uint8_t*>(const_cast<nsCString&>(aVisualDnDData).BeginWriting()),
-      mozilla::gfx::IntSize(aWidth, aHeight), aStride,
-      static_cast<mozilla::gfx::SurfaceFormat>(aFormat), false);
-    raw->GuaranteePersistance();
+        gfx::CreateDataSourceSurfaceFromData(gfx::IntSize(aWidth, aHeight),
+                                             static_cast<gfx::SurfaceFormat>(aFormat),
+                                             reinterpret_cast<const uint8_t*>(aVisualDnDData.BeginReading()),
+                                             aStride);
   }
   mDragAreaX = aDragAreaX;
   mDragAreaY = aDragAreaY;
@@ -3249,12 +3348,15 @@ TabParent::GetShowInfo()
       mFrameElement->HasAttr(kNameSpaceID_None, nsGkAtoms::allowfullscreen) ||
       mFrameElement->HasAttr(kNameSpaceID_None, nsGkAtoms::mozallowfullscreen);
     bool isPrivate = mFrameElement->HasAttr(kNameSpaceID_None, nsGkAtoms::mozprivatebrowsing);
+    bool isTransparent =
+      nsContentUtils::IsChromeDoc(mFrameElement->OwnerDoc()) &&
+      mFrameElement->HasAttr(kNameSpaceID_None, nsGkAtoms::transparent);
     return ShowInfo(name, allowFullscreen, isPrivate, false,
-                    mDPI, mDefaultScale.scale);
+                    isTransparent, mDPI, mDefaultScale.scale);
   }
 
   return ShowInfo(EmptyString(), false, false, false,
-                  mDPI, mDefaultScale.scale);
+                  false, mDPI, mDefaultScale.scale);
 }
 
 void

@@ -177,7 +177,7 @@ SeekTask::GetSeekJob()
 }
 
 bool
-SeekTask::Exists()
+SeekTask::Exists() const
 {
   return mSeekJob.Exists();
 }
@@ -237,7 +237,7 @@ SeekTask::EnsureVideoDecodeTaskQueued()
              IsVideoDecoding(), VideoRequestStatus());
 
   if (!IsVideoDecoding() ||
-      mReader->IsRequestingVidoeData() ||
+      mReader->IsRequestingVideoData() ||
       mVideoWaitRequest.Exists() ||
       mSeekRequest.Exists()) {
     return NS_OK;
@@ -264,7 +264,7 @@ const char*
 SeekTask::VideoRequestStatus()
 {
   AssertOwnerThread();
-  if (mReader->IsRequestingVidoeData()) {
+  if (mReader->IsRequestingVideoData()) {
     MOZ_DIAGNOSTIC_ASSERT(!mVideoWaitRequest.Exists());
     return "pending";
   } else if (mVideoWaitRequest.Exists()) {
@@ -422,6 +422,7 @@ SeekTask::IsAudioSeekComplete()
       mSeekJob.Exists(), mDropAudioUntilNextDiscontinuity, mIsAudioQueueFinished, !!mSeekedAudioData);
   return
     !HasAudio() ||
+    mSeekJob.mTarget.IsVideoOnly() ||
     (Exists() && !mDropAudioUntilNextDiscontinuity &&
      (mIsAudioQueueFinished || mSeekedAudioData));
 }
@@ -478,8 +479,10 @@ SeekTask::OnSeekResolved(media::TimeUnit)
   mSeekRequest.Complete();
   // We must decode the first samples of active streams, so we can determine
   // the new stream time. So dispatch tasks to do that.
-  EnsureAudioDecodeTaskQueued();
   EnsureVideoDecodeTaskQueued();
+  if (!mSeekJob.mTarget.IsVideoOnly()) {
+    EnsureAudioDecodeTaskQueued();
+  }
 }
 
 void

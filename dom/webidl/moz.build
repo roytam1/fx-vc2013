@@ -230,7 +230,6 @@ WEBIDL_FILES = [
     'HTMLPictureElement.webidl',
     'HTMLPreElement.webidl',
     'HTMLProgressElement.webidl',
-    'HTMLPropertiesCollection.webidl',
     'HTMLQuoteElement.webidl',
     'HTMLScriptElement.webidl',
     'HTMLSelectElement.webidl',
@@ -357,14 +356,12 @@ WEBIDL_FILES = [
     'PannerNode.webidl',
     'ParentNode.webidl',
     'Performance.webidl',
-    'PerformanceCompositeTiming.webidl',
     'PerformanceEntry.webidl',
     'PerformanceMark.webidl',
     'PerformanceMeasure.webidl',
     'PerformanceNavigation.webidl',
     'PerformanceObserver.webidl',
     'PerformanceObserverEntryList.webidl',
-    'PerformanceRenderTiming.webidl',
     'PerformanceResourceTiming.webidl',
     'PerformanceTiming.webidl',
     'PeriodicWave.webidl',
@@ -423,7 +420,6 @@ WEBIDL_FILES = [
     'StyleSheetList.webidl',
     'SubtleCrypto.webidl',
     'SVGAElement.webidl',
-    'SVGAltGlyphElement.webidl',
     'SVGAngle.webidl',
     'SVGAnimatedAngle.webidl',
     'SVGAnimatedBoolean.webidl',
@@ -823,6 +819,7 @@ GENERATED_EVENTS_WEBIDL_FILES = [
     'UDPMessageEvent.webidl',
     'UserProximityEvent.webidl',
     'USSDReceivedEvent.webidl',
+    'WebGLContextEvent.webidl',
 ]
 
 if CONFIG['MOZ_WEBRTC']:

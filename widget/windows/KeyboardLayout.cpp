@@ -895,14 +895,14 @@ NativeKey::NativeKey(nsWindowBase* aWidget,
   if (IsKeyDownMessage()) {
     // Compute some strings which may be inputted by the key with various
     // modifier state if this key event won't cause text input actually.
-    // They will be used for setting alternativeCharCodes in the callback
+    // They will be used for setting mAlternativeCharCodes in the callback
     // method which will be called by TextEventDispatcher.
     if (NeedsToHandleWithoutFollowingCharMessages()) {
       ComputeInputtingStringWithKeyboardLayout();
-    } else if (mVirtualKeyCode == VK_PACKET) {
-      // If this is sent by SendInput() API to input a Unicode character,
-      // we can only know what char will be inputted with following WM_CHAR
-      // message.
+    } else {
+      // This message might be sent by SendInput() API to input a Unicode
+      // character, in such case, we can only know what char will be inputted
+      // with following WM_CHAR message.
       // TODO: We cannot initialize mCommittedCharsAndModifiers for VK_PACKET
       //       if the message is WM_KEYUP because we don't have preceding
       //       WM_CHAR message.  Therefore, we should dispatch eKeyUp event at
@@ -915,7 +915,8 @@ NativeKey::NativeKey(nsWindowBase* aWidget,
       //       WM_KEYDOWN if following WM_CHAR is a part of a Unicode character.
       MSG followingCharMsg;
       if (GetFollowingCharMessage(followingCharMsg, false) &&
-          followingCharMsg.wParam) {
+          !IsControlChar(static_cast<char16_t>(followingCharMsg.wParam))) {
+        mCommittedCharsAndModifiers.Clear();
         mCommittedCharsAndModifiers.Append(
           static_cast<char16_t>(followingCharMsg.wParam),
           mModKeyState.GetModifiers());
@@ -1026,6 +1027,13 @@ NativeKey::InitWithAppCommand()
   mCodeNameIndex =
     KeyboardLayout::ConvertScanCodeToCodeNameIndex(
       GetScanCodeWithExtendedFlag());
+}
+
+bool
+NativeKey::IsControlChar(char16_t aChar) const
+{
+  static const char16_t U_SPACE = 0x20;
+  return aChar < U_SPACE;
 }
 
 bool
@@ -1229,14 +1237,14 @@ NativeKey::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
   switch (aKeyEvent.mMessage) {
     case eKeyDown:
     case eKeyDownOnPlugin:
-      aKeyEvent.keyCode = mDOMKeyCode;
+      aKeyEvent.mKeyCode = mDOMKeyCode;
       // Unique id for this keydown event and its associated keypress.
       sUniqueKeyEventId++;
       aKeyEvent.mUniqueId = sUniqueKeyEventId;
       break;
     case eKeyUp:
     case eKeyUpOnPlugin:
-      aKeyEvent.keyCode = mDOMKeyCode;
+      aKeyEvent.mKeyCode = mDOMKeyCode;
       // Set defaultPrevented of the key event if the VK_MENU is not a system
       // key release, so that the menu bar does not trigger.  This helps avoid
       // triggering the menu bar for ALT key accelerators used in assistive
@@ -1260,7 +1268,7 @@ NativeKey::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
   }
   aKeyEvent.mCodeNameIndex = mCodeNameIndex;
   MOZ_ASSERT(mCodeNameIndex != CODE_NAME_INDEX_USE_STRING);
-  aKeyEvent.location = GetKeyLocation();
+  aKeyEvent.mLocation = GetKeyLocation();
   aModKeyState.InitInputEvent(aKeyEvent);
 
   NPEvent pluginEvent;
@@ -1672,7 +1680,6 @@ NativeKey::HandleCharMessage(const MSG& aCharMsg,
   //           should cause composition events because they are not caused
   //           by actual keyboard operation.
 
-  static const char16_t U_SPACE = 0x20;
   static const char16_t U_EQUAL = 0x3D;
 
   // First, handle normal text input or non-printable key case here.
@@ -1681,10 +1688,10 @@ NativeKey::HandleCharMessage(const MSG& aCharMsg,
       (mOriginalVirtualKeyCode &&
        !KeyboardLayout::IsPrintableCharKey(mOriginalVirtualKeyCode))) {
     WidgetKeyboardEvent keypressEvent(true, eKeyPress, mWidget);
-    if (aCharMsg.wParam >= U_SPACE) {
-      keypressEvent.charCode = static_cast<uint32_t>(aCharMsg.wParam);
+    if (!IsControlChar(static_cast<char16_t>(aCharMsg.wParam))) {
+      keypressEvent.mCharCode = static_cast<uint32_t>(aCharMsg.wParam);
     } else {
-      keypressEvent.keyCode = mDOMKeyCode;
+      keypressEvent.mKeyCode = mDOMKeyCode;
     }
     nsresult rv = mDispatcher->BeginNativeInputTransaction();
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -1715,7 +1722,8 @@ NativeKey::HandleCharMessage(const MSG& aCharMsg,
 
   char16_t uniChar;
   // Ctrl+A Ctrl+Z, see Programming Windows 3.1 page 110 for details
-  if (mModKeyState.IsControl() && aCharMsg.wParam <= 0x1A) {
+  if (mModKeyState.IsControl() &&
+      IsControlChar(static_cast<char16_t>(aCharMsg.wParam))) {
     // Bug 16486: Need to account for shift here.
     uniChar = aCharMsg.wParam - 1 + (mModKeyState.IsShift() ? 'A' : 'a');
   } else if (mModKeyState.IsControl() && aCharMsg.wParam <= 0x1F) {
@@ -1724,7 +1732,7 @@ NativeKey::HandleCharMessage(const MSG& aCharMsg,
     // for some reason the keypress handler need to have the uniChar code set
     // with the addition of a upper case A not the lower case.
     uniChar = aCharMsg.wParam - 1 + 'A';
-  } else if (aCharMsg.wParam < U_SPACE ||
+  } else if (IsControlChar(static_cast<char16_t>(aCharMsg.wParam)) ||
              (aCharMsg.wParam == U_EQUAL && mModKeyState.IsControl())) {
     uniChar = 0;
   } else {
@@ -1758,9 +1766,9 @@ NativeKey::HandleCharMessage(const MSG& aCharMsg,
   }
 
   WidgetKeyboardEvent keypressEvent(true, eKeyPress, mWidget);
-  keypressEvent.charCode = uniChar;
-  if (!keypressEvent.charCode) {
-    keypressEvent.keyCode = mDOMKeyCode;
+  keypressEvent.mCharCode = uniChar;
+  if (!keypressEvent.mCharCode) {
+    keypressEvent.mKeyCode = mDOMKeyCode;
   }
   nsEventStatus status = InitKeyEvent(keypressEvent, mModKeyState, &aCharMsg);
   bool dispatched =
@@ -2235,7 +2243,7 @@ NativeKey::ComputeInputtingStringWithKeyboardLayout()
       mShiftedLatinChar = mUnshiftedLatinChar = 0;
     }
   } else if (mUnshiftedLatinChar) {
-    // If the mShiftedLatinChar is 0, the keyCode doesn't produce
+    // If the mShiftedLatinChar is 0, the mKeyCode doesn't produce
     // alphabet character.  At that time, the character may be produced
     // with Shift key.  E.g., on French keyboard layout, NS_VK_PERCENT
     // key produces LATIN SMALL LETTER U WITH GRAVE (U+00F9) without
@@ -2252,9 +2260,9 @@ NativeKey::ComputeInputtingStringWithKeyboardLayout()
     return;
   }
 
-  // If the charCode is not ASCII character, we should replace the
-  // charCode with ASCII character only when Ctrl is pressed.
-  // But don't replace the charCode when the charCode is not same as
+  // If the mCharCode is not ASCII character, we should replace the
+  // mCharCode with ASCII character only when Ctrl is pressed.
+  // But don't replace the mCharCode when the mCharCode is not same as
   // unmodified characters. In such case, Ctrl is sometimes used for a
   // part of character inputting key combination like Shift.
   uint32_t ch =
@@ -2284,7 +2292,7 @@ NativeKey::DispatchKeyPressEventsWithoutCharMessage() const
   WidgetKeyboardEvent keypressEvent(true, eKeyPress, mWidget);
   if (mInputtingStringAndModifiers.IsEmpty() &&
       mShiftedString.IsEmpty() && mUnshiftedString.IsEmpty()) {
-    keypressEvent.keyCode = mDOMKeyCode;
+    keypressEvent.mKeyCode = mDOMKeyCode;
   }
   nsEventStatus status = InitKeyEvent(keypressEvent, mModKeyState);
   mDispatcher->MaybeDispatchKeypressEvents(keypressEvent, status,
@@ -2306,7 +2314,8 @@ NativeKey::WillDispatchKeyboardEvent(WidgetKeyboardEvent& aKeyboardEvent,
     return;
   }
 
-  nsTArray<AlternativeCharCode>& altArray = aKeyboardEvent.alternativeCharCodes;
+  nsTArray<AlternativeCharCode>& altArray =
+    aKeyboardEvent.mAlternativeCharCodes;
 
   uint16_t shiftedChar = 0, unshiftedChar = 0;
   if (skipUniChars <= aIndex) {
@@ -2331,10 +2340,10 @@ NativeKey::WillDispatchKeyboardEvent(WidgetKeyboardEvent& aKeyboardEvent,
     uint16_t uniChar =
       mInputtingStringAndModifiers.mChars[aIndex - skipUniChars];
 
-    // The charCode was set from mKeyValue. However, for example, when Ctrl key
+    // The mCharCode was set from mKeyValue. However, for example, when Ctrl key
     // is pressed, its value should indicate an ASCII character for backward
     // compatibility rather than inputting character without the modifiers.
-    // Therefore, we need to modify charCode value here.
+    // Therefore, we need to modify mCharCode value here.
     aKeyboardEvent.SetCharCode(uniChar);
   }
 

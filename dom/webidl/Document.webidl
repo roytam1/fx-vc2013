@@ -116,7 +116,6 @@ partial interface Document {
   //(HTML only)readonly attribute HTMLCollection forms;
   //(HTML only)readonly attribute HTMLCollection scripts;
   //(HTML only)NodeList getElementsByName(DOMString elementName);
-  //(HTML only)NodeList getItems(optional DOMString typeNames); // microdata
   //(Not implemented)readonly attribute DOMElementMap cssElementMap;
 
   // dynamic markup insertion
@@ -224,11 +223,15 @@ partial interface Document {
 partial interface Document {
   // Note: Per spec the 'S' in these two is lowercase, but the "Moz"
   // versions hve it uppercase.
-  [Func="nsDocument::IsUnprefixedFullscreenEnabled"]
+  [LenientSetter, Func="nsDocument::IsUnprefixedFullscreenEnabled"]
+  readonly attribute boolean fullscreen;
+  [BinaryName="fullscreen", Deprecated="PrefixedFullscreenAPI"]
+  readonly attribute boolean mozFullScreen;
+  [LenientSetter, Func="nsDocument::IsUnprefixedFullscreenEnabled"]
   readonly attribute boolean fullscreenEnabled;
   [BinaryName="fullscreenEnabled", Deprecated="PrefixedFullscreenAPI"]
   readonly attribute boolean mozFullScreenEnabled;
-  [Func="nsDocument::IsUnprefixedFullscreenEnabled"]
+  [LenientSetter, Func="nsDocument::IsUnprefixedFullscreenEnabled"]
   readonly attribute Element? fullscreenElement;
   [BinaryName="fullscreenElement", Deprecated="PrefixedFullscreenAPI"]
   readonly attribute Element? mozFullScreenElement;
@@ -237,10 +240,6 @@ partial interface Document {
   void exitFullscreen();
   [BinaryName="exitFullscreen", Deprecated="PrefixedFullscreenAPI"]
   void mozCancelFullScreen();
-
-  // Gecko-specific fullscreen bits
-  [Deprecated="PrefixedFullscreenAPI"]
-  readonly attribute boolean mozFullScreen;
 };
 
 // http://dvcs.w3.org/hg/pointerlock/raw-file/default/index.html#extensions-to-the-document-interface

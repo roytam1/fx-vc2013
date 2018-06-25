@@ -24,8 +24,8 @@ import org.mozilla.gecko.home.HomeConfig.PanelType;
 import org.mozilla.gecko.menu.GeckoMenu;
 import org.mozilla.gecko.menu.GeckoMenuInflater;
 import org.mozilla.gecko.menu.MenuPanel;
-import org.mozilla.gecko.mozglue.ContextUtils;
-import org.mozilla.gecko.mozglue.ContextUtils.SafeIntent;
+import org.mozilla.gecko.mozglue.SafeIntentUtils;
+import org.mozilla.gecko.mozglue.SafeIntentUtils.SafeIntent;
 import org.mozilla.gecko.mozglue.GeckoLoader;
 import org.mozilla.gecko.permissions.Permissions;
 import org.mozilla.gecko.preferences.ClearOnShutdownPref;
@@ -177,6 +177,9 @@ public abstract class GeckoApp
     protected MenuPanel mMenuPanel;
     protected Menu mMenu;
     protected boolean mIsRestoringActivity;
+
+    /** Tells if we're aborting app launch, e.g. if this is an unsupported device configuration. */
+    protected boolean mIsAbortingAppLaunch;
 
     private ContactService mContactService;
     private PromptService mPromptService;
@@ -1094,6 +1097,7 @@ public abstract class GeckoApp
 
         if (!HardwareUtils.isSupportedSystem()) {
             // This build does not support the Android version of the device: Show an error and finish the app.
+            mIsAbortingAppLaunch = true;
             super.onCreate(savedInstanceState);
             showSDKVersionError();
             finish();
@@ -1220,7 +1224,7 @@ public abstract class GeckoApp
 
         GeckoThread.launch();
 
-        Bundle stateBundle = ContextUtils.getBundleExtra(getIntent(), EXTRA_STATE_BUNDLE);
+        Bundle stateBundle = SafeIntentUtils.getBundleExtra(getIntent(), EXTRA_STATE_BUNDLE);
         if (stateBundle != null) {
             // Use the state bundle if it was given as an intent extra. This is
             // only intended to be used internally via Robocop, so a boolean
@@ -1348,7 +1352,21 @@ public abstract class GeckoApp
     @Override
     public void onStart() {
         super.onStart();
+        if (mIsAbortingAppLaunch) {
+            return;
+        }
+
         mWasFirstTabShownAfterActivityUnhidden = false; // onStart indicates we were hidden.
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // Overriding here is not necessary, but we do this so we don't
+        // forget to add the abort if we override this method later.
+        if (mIsAbortingAppLaunch) {
+            return;
+        }
     }
 
     /**
@@ -1518,11 +1536,8 @@ public abstract class GeckoApp
             processTabQueue();
         }
 
-        // If we're not restoring, move the session file so it can be read for
-        // the last tabs section.
-        if (!mShouldRestore) {
-            getProfile().moveSessionFile();
-        }
+        // Make sure sessionstore.bak is either updated or deleted as necessary.
+        getProfile().updateSessionFile(mShouldRestore);
 
         recordStartupActionTelemetry(passedUri, action);
 
@@ -1776,7 +1791,7 @@ public abstract class GeckoApp
     }
 
     private boolean getRestartFromIntent() {
-        return ContextUtils.getBooleanExtra(getIntent(), "didRestart", false);
+        return SafeIntentUtils.getBooleanExtra(getIntent(), "didRestart", false);
     }
 
     /**
@@ -1976,6 +1991,9 @@ public abstract class GeckoApp
         // After an onPause, the activity is back in the foreground.
         // Undo whatever we did in onPause.
         super.onResume();
+        if (mIsAbortingAppLaunch) {
+            return;
+        }
 
         int newOrientation = getResources().getConfiguration().orientation;
         if (GeckoScreenOrientation.getInstance().update(newOrientation)) {
@@ -2053,6 +2071,11 @@ public abstract class GeckoApp
     @Override
     public void onPause()
     {
+        if (mIsAbortingAppLaunch) {
+            super.onPause();
+            return;
+        }
+
         final HealthRecorder rec = mHealthRecorder;
         final Context context = this;
 
@@ -2101,6 +2124,11 @@ public abstract class GeckoApp
 
     @Override
     public void onRestart() {
+        if (mIsAbortingAppLaunch) {
+            super.onRestart();
+            return;
+        }
+
         // Faster on main thread with an async apply().
         final StrictMode.ThreadPolicy savedPolicy = StrictMode.allowThreadDiskReads();
         try {
@@ -2116,7 +2144,7 @@ public abstract class GeckoApp
 
     @Override
     public void onDestroy() {
-        if (!HardwareUtils.isSupportedSystem()) {
+        if (mIsAbortingAppLaunch) {
             // This build does not support the Android version of the device:
             // We did not initialize anything, so skip cleaning up.
             super.onDestroy();

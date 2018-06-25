@@ -3,6 +3,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
+/* import-globals-from ../../framework/test/shared-head.js */
 "use strict";
 
 // shared-head.js handles imports, constants, and utility functions
@@ -209,7 +210,7 @@ function findLogEntry(str) {
  * @return object
  *         A promise that is resolved once the web console is open.
  */
-var openConsole = function(tab) {
+var openConsole = function (tab) {
   let webconsoleOpened = promise.defer();
   let target = TargetFactory.forTab(tab || gBrowser.selectedTab);
   gDevTools.showToolbox(target, "webconsole").then(toolbox => {
@@ -245,7 +246,7 @@ var closeConsole = Task.async(function* (tab) {
  * does and completes the load event.
  * @return a promise that resolves to the tab object
  */
-var waitForTab = Task.async(function*() {
+var waitForTab = Task.async(function* () {
   info("Waiting for a tab to open");
   yield once(gBrowser.tabContainer, "TabOpen");
   let tab = gBrowser.selectedTab;
@@ -317,7 +318,7 @@ var finishTest = Task.async(function* () {
   finish();
 });
 
-registerCleanupFunction(function*() {
+registerCleanupFunction(function* () {
   DevToolsUtils.testing = false;
 
   // Remove stored console commands in between tests
@@ -482,12 +483,12 @@ function findVariableViewProperties(view, rules, options) {
       rule.name = lastName;
 
       let matched = matchVariablesViewProperty(prop, rule, options);
-      return matched.then(onMatch.bind(null, prop, rule)).then(function() {
+      return matched.then(onMatch.bind(null, prop, rule)).then(function () {
         rule.name = name;
       });
     }, function onFailure() {
       return promise.resolve(null);
-    }).then(processExpandRules.bind(null, rules)).then(function() {
+    }).then(processExpandRules.bind(null, rules)).then(function () {
       deferred.resolve(null);
     });
 
@@ -658,7 +659,7 @@ function variablesViewExpandTo(options) {
     let deferred = promise.defer();
 
     if (prop._fetched || !jsterm) {
-      executeSoon(function() {
+      executeSoon(function () {
         deferred.resolve(prop);
       });
     } else {
@@ -1566,14 +1567,17 @@ function checkOutputForInputs(hud, inputTests) {
   function onTabOpen(entry, {resolve, reject}, event) {
     container.removeEventListener("TabOpen", entry._onTabOpen, true);
     entry._onTabOpen = null;
-
     let tab = event.target;
     let browser = gBrowser.getBrowserForTab(tab);
-    loadBrowser(browser).then(() => {
-      let uri = content.location.href;
+
+    Task.spawn(function* () {
+      yield loadBrowser(browser);
+      let uri = yield ContentTask.spawn(browser, {}, function* () {
+        return content.location.href;
+      });
       ok(entry.expectedTab && entry.expectedTab == uri,
          "opened tab '" + uri + "', expected tab '" + entry.expectedTab + "'");
-      return closeTab(tab);
+      yield closeTab(tab);
     }).then(resolve, reject);
   }
 
@@ -1592,7 +1596,7 @@ function checkOutputForInputs(hud, inputTests) {
  * @resolves The request object.
  */
 function waitForFinishedRequest(predicate = () => true) {
-  registerCleanupFunction(function() {
+  registerCleanupFunction(function () {
     HUDService.lastFinishedRequest.callback = null;
   });
 
@@ -1607,7 +1611,7 @@ function waitForFinishedRequest(predicate = () => true) {
       } else {
         info(`Ignoring unexpected request ${JSON.stringify(request, null, 2)}`);
       }
-    }
+    };
   });
 }
 
@@ -1619,7 +1623,7 @@ function waitForFinishedRequest(predicate = () => true) {
  * @param {Boolean} useCapture Optional for addEventListener/removeEventListener
  * @return A promise that resolves when the event has been handled
  */
-function once(target, eventName, useCapture=false) {
+function once(target, eventName, useCapture = false) {
   info("Waiting for event: '" + eventName + "' on " + target + ".");
 
   let deferred = promise.defer();
@@ -1701,7 +1705,7 @@ function simulateMessageLinkClick(element, expectedLink) {
   // Invoke the click event and check if a new tab would
   // open to the correct page.
   let oldOpenUILinkIn = window.openUILinkIn;
-  window.openUILinkIn = function(link) {
+  window.openUILinkIn = function (link) {
     if (link == expectedLink) {
       ok(true, "Clicking the message link opens the desired page");
       window.openUILinkIn = oldOpenUILinkIn;
@@ -1720,7 +1724,7 @@ function simulateMessageLinkClick(element, expectedLink) {
   return deferred.promise;
 }
 
-function getRenderedSource (root) {
+function getRenderedSource(root) {
   let location = root.querySelector(".message-location .frame-link");
   return location ? {
     url: location.getAttribute("data-url"),

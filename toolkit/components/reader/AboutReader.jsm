@@ -41,6 +41,8 @@ var AboutReader = function(mm, win, articlePromise) {
 
   this._docRef = Cu.getWeakReference(doc);
   this._winRef = Cu.getWeakReference(win);
+  this._innerWindowId = win.QueryInterface(Ci.nsIInterfaceRequestor)
+    .getInterface(Ci.nsIDOMWindowUtils).currentInnerWindowID;
 
   this._article = null;
 
@@ -60,9 +62,11 @@ var AboutReader = function(mm, win, articlePromise) {
 
   doc.addEventListener("click", this, false);
 
-  win.addEventListener("unload", this, false);
+  win.addEventListener("pagehide", this, false);
   win.addEventListener("scroll", this, false);
   win.addEventListener("resize", this, false);
+
+  Services.obs.addObserver(this, "inner-window-destroyed", false);
 
   doc.addEventListener("visibilitychange", this, false);
 
@@ -106,6 +110,8 @@ var AboutReader = function(mm, win, articlePromise) {
   this._setupFontSizeButtons();
 
   this._setupContentWidthButtons();
+
+  this._setupLineHeightButtons();
 
   if (win.speechSynthesis && Services.prefs.getBoolPref("narrate.enabled")) {
     new NarrateControls(mm, win);
@@ -252,7 +258,7 @@ AboutReader.prototype = {
         this._handleVisibilityChange();
         break;
 
-      case "unload":
+      case "pagehide":
         // Close the Banners Font-dropdown, cleanup Android BackPressListener.
         this._closeDropdowns();
 
@@ -263,6 +269,19 @@ AboutReader.prototype = {
         this._windowUnloaded = true;
         break;
     }
+  },
+
+  observe: function(subject, topic, data) {
+    if (subject.QueryInterface(Ci.nsISupportsPRUint64).data != this._innerWindowId) {
+      return;
+    }
+
+    Services.obs.removeObserver(this, "inner-window-destroyed", false);
+
+    this._mm.removeMessageListener("Reader:CloseDropdown", this);
+    this._mm.removeMessageListener("Reader:AddButton", this);
+    this._mm.removeMessageListener("Reader:RemoveButton", this);
+    this._windowUnloaded = true;
   },
 
   _onReaderClose: function() {
@@ -356,19 +375,19 @@ AboutReader.prototype = {
     const CONTENT_WIDTH_MIN = 1;
     const CONTENT_WIDTH_MAX = 9;
 
-    let currentLineHeight = Services.prefs.getIntPref("reader.content_width");
-    currentLineHeight = Math.max(CONTENT_WIDTH_MIN, Math.min(CONTENT_WIDTH_MAX, currentLineHeight));
+    let currentContentWidth = Services.prefs.getIntPref("reader.content_width");
+    currentContentWidth = Math.max(CONTENT_WIDTH_MIN, Math.min(CONTENT_WIDTH_MAX, currentContentWidth));
 
     let plusButton = this._doc.getElementById("content-width-plus");
     let minusButton = this._doc.getElementById("content-width-minus");
 
     function updateControls() {
-      if (currentLineHeight === CONTENT_WIDTH_MIN) {
+      if (currentContentWidth === CONTENT_WIDTH_MIN) {
         minusButton.setAttribute("disabled", true);
       } else {
         minusButton.removeAttribute("disabled");
       }
-      if (currentLineHeight === CONTENT_WIDTH_MAX) {
+      if (currentContentWidth === CONTENT_WIDTH_MAX) {
         plusButton.setAttribute("disabled", true);
       } else {
         plusButton.removeAttribute("disabled");
@@ -376,7 +395,7 @@ AboutReader.prototype = {
     }
 
     updateControls();
-    this._setContentWidth(currentLineHeight);
+    this._setContentWidth(currentContentWidth);
 
     plusButton.addEventListener("click", (event) => {
       if (!event.isTrusted) {
@@ -384,13 +403,13 @@ AboutReader.prototype = {
       }
       event.stopPropagation();
 
-      if (currentLineHeight >= CONTENT_WIDTH_MAX) {
+      if (currentContentWidth >= CONTENT_WIDTH_MAX) {
         return;
       }
 
-      currentLineHeight++;
+      currentContentWidth++;
       updateControls();
-      this._setContentWidth(currentLineHeight);
+      this._setContentWidth(currentContentWidth);
     }, true);
 
     minusButton.addEventListener("click", (event) => {
@@ -399,13 +418,81 @@ AboutReader.prototype = {
       }
       event.stopPropagation();
 
-      if (currentLineHeight <= CONTENT_WIDTH_MIN) {
+      if (currentContentWidth <= CONTENT_WIDTH_MIN) {
+        return;
+      }
+
+      currentContentWidth--;
+      updateControls();
+      this._setContentWidth(currentContentWidth);
+    }, true);
+  },
+
+  _setLineHeight: function(newLineHeight) {
+    let contentClasses = this._doc.getElementById("moz-reader-content").classList;
+
+    if (this._lineHeight > 0)
+      contentClasses.remove("line-height" + this._lineHeight);
+
+    this._lineHeight = newLineHeight;
+    contentClasses.add("line-height" + this._lineHeight);
+    return AsyncPrefs.set("reader.line_height", this._lineHeight);
+  },
+
+  _setupLineHeightButtons: function() {
+    const LINE_HEIGHT_MIN = 1;
+    const LINE_HEIGHT_MAX = 9;
+
+    let currentLineHeight = Services.prefs.getIntPref("reader.line_height");
+    currentLineHeight = Math.max(LINE_HEIGHT_MIN, Math.min(LINE_HEIGHT_MAX, currentLineHeight));
+
+    let plusButton = this._doc.getElementById("line-height-plus");
+    let minusButton = this._doc.getElementById("line-height-minus");
+
+    function updateControls() {
+      if (currentLineHeight === LINE_HEIGHT_MIN) {
+        minusButton.setAttribute("disabled", true);
+      } else {
+        minusButton.removeAttribute("disabled");
+      }
+      if (currentLineHeight === LINE_HEIGHT_MAX) {
+        plusButton.setAttribute("disabled", true);
+      } else {
+        plusButton.removeAttribute("disabled");
+      }
+    }
+
+    updateControls();
+    this._setLineHeight(currentLineHeight);
+
+    plusButton.addEventListener("click", (event) => {
+      if (!event.isTrusted) {
+        return;
+      }
+      event.stopPropagation();
+
+      if (currentLineHeight >= LINE_HEIGHT_MAX) {
+        return;
+      }
+
+      currentLineHeight++;
+      updateControls();
+      this._setLineHeight(currentLineHeight);
+    }, true);
+
+    minusButton.addEventListener("click", (event) => {
+      if (!event.isTrusted) {
+        return;
+      }
+      event.stopPropagation();
+
+      if (currentLineHeight <= LINE_HEIGHT_MIN) {
         return;
       }
 
       currentLineHeight--;
       updateControls();
-      this._setContentWidth(currentLineHeight);
+      this._setLineHeight(currentLineHeight);
     }, true);
   },
 

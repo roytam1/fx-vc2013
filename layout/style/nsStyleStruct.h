@@ -865,25 +865,24 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleMargin
     return nsChangeHint(0);
   }
 
-  nsStyleSides  mMargin;          // [reset] coord, percent, calc, auto
-
   bool GetMargin(nsMargin& aMargin) const
   {
-    if (mMargin.ConvertsToLength()) {
-      GetMarginNoPercentage(aMargin);
-      return true;
+    if (!mMargin.ConvertsToLength()) {
+      return false;
     }
 
-    return false;
-  }
-
-  void GetMarginNoPercentage(nsMargin& aMargin) const
-  {
-    MOZ_ASSERT(mMargin.ConvertsToLength());
     NS_FOR_CSS_SIDES(side) {
       aMargin.Side(side) = mMargin.ToLength(side);
     }
+    return true;
   }
+
+  // Return true if either the start or end side in the axis is 'auto'.
+  // (defined in WritingModes.h since we need the full WritingMode type)
+  inline bool HasBlockAxisAuto(mozilla::WritingMode aWM) const;
+  inline bool HasInlineAxisAuto(mozilla::WritingMode aWM) const;
+
+  nsStyleSides  mMargin; // [reset] coord, percent, calc, auto
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePadding
@@ -926,21 +925,15 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePadding
 
   bool GetPadding(nsMargin& aPadding) const
   {
-    if (mPadding.ConvertsToLength()) {
-      GetPaddingNoPercentage(aPadding);
-      return true;
+    if (!mPadding.ConvertsToLength()) {
+      return false;
     }
 
-    return false;
-  }
-
-  void GetPaddingNoPercentage(nsMargin& aPadding) const
-  {
-    MOZ_ASSERT(mPadding.ConvertsToLength());
     NS_FOR_CSS_SIDES(side) {
       // Clamp negative calc() to 0.
       aPadding.Side(side) = std::max(mPadding.ToLength(side), 0);
     }
+    return true;
   }
 };
 
@@ -1343,7 +1336,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleOutline
       FreeByObjectID(mozilla::eArenaObjectID_nsStyleOutline, this);
   }
 
-  void RecalcData(nsPresContext* aContext);
+  void RecalcData();
   nsChangeHint CalcDifference(const nsStyleOutline& aOther) const;
   static nsChangeHint MaxDifference() {
     return NS_CombineHint(NS_CombineHint(nsChangeHint_UpdateOverflow,
@@ -1359,14 +1352,17 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleOutline
 
   nsStyleCorners  mOutlineRadius; // [reset] coord, percent, calc
 
-  // Note that this is a specified value.  You can get the actual values
-  // with GetOutlineWidth.  You cannot get the computed value directly.
+  // This is the specified value of outline-width, but with length values
+  // computed to absolute.  mActualOutlineWidth stores the outline-width
+  // value used by layout.  (We must store mOutlineWidth for the same
+  // style struct resolution reasons that we do nsStyleBorder::mBorder;
+  // see that field's comment.)
   nsStyleCoord  mOutlineWidth;    // [reset] coord, enum (see nsStyleConsts.h)
   nscoord       mOutlineOffset;   // [reset]
 
   nscoord GetOutlineWidth() const
   {
-    return mCachedOutlineWidth;
+    return mActualOutlineWidth;
   }
 
   uint8_t GetOutlineStyle() const
@@ -1407,9 +1403,10 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleOutline
   }
 
 protected:
-  // This value is the actual value, so it's rounded to the nearest device
-  // pixel.
-  nscoord       mCachedOutlineWidth;
+  // The actual value of outline-width is the computed value (an absolute
+  // length, forced to zero when outline-style is none) rounded to device
+  // pixels.  This is the value used by layout.
+  nscoord       mActualOutlineWidth;
 
   nscolor       mOutlineColor;    // [reset]
 
@@ -3566,6 +3563,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleSVGReset
     return nsChangeHint_UpdateEffects |
            nsChangeHint_UpdateOverflow |
            nsChangeHint_NeutralChange |
+           nsChangeHint_UpdateBackgroundPosition |
            NS_STYLE_HINT_REFLOW;
   }
   static nsChangeHint DifferenceAlwaysHandledForDescendants() {

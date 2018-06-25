@@ -1155,6 +1155,15 @@ RestyleManager::AnimationsWithDestroyedFrame::StopAnimationsWithoutFrame(
 
     animationManager->StopAnimationsForElement(element, aPseudoType);
     transitionManager->StopTransitionsForElement(element, aPseudoType);
+
+    // All other animations should keep running but not running on the
+    // *compositor* at this point.
+    EffectSet* effectSet = EffectSet::GetEffectSet(element, aPseudoType);
+    if (effectSet) {
+      for (KeyframeEffectReadOnly* effect : *effectSet) {
+        effect->ResetIsRunningOnCompositor();
+      }
+    }
   }
 }
 
@@ -3223,6 +3232,7 @@ ElementRestyler::Restyle(nsRestyleHint aRestyleHint)
   NS_ASSERTION(mFrame->GetContent() || !mParentContent ||
                !mParentContent->GetParent(),
                "frame must have content (unless at the top of the tree)");
+  MOZ_ASSERT(mPresContext == mFrame->PresContext(), "pres contexts match");
 
   NS_ASSERTION(!GetPrevContinuationWithSameStyle(mFrame),
                "should not be trying to restyle this frame separately");
@@ -3230,7 +3240,9 @@ ElementRestyler::Restyle(nsRestyleHint aRestyleHint)
   MOZ_ASSERT(!(aRestyleHint & eRestyle_LaterSiblings),
              "eRestyle_LaterSiblings must not be part of aRestyleHint");
 
-  AutoDisplayContentsAncestorPusher adcp(mTreeMatchContext, mFrame->PresContext(),
+  mPresContext->RestyledElement();
+
+  AutoDisplayContentsAncestorPusher adcp(mTreeMatchContext, mPresContext,
       mFrame->GetContent() ? mFrame->GetContent()->GetParent() : nullptr);
 
   AutoSelectorArrayTruncater asat(mSelectorsForDescendants);

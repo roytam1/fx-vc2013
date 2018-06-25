@@ -69,12 +69,6 @@ typedef enum {
   MOZ_GTK_TAB_SELECTED        = 1 << 10
 } GtkTabFlags;
 
-/** flags for menuitems **/
-typedef enum {
-  /* menuitem is part of the menubar */
-  MOZ_TOPLEVEL_MENU_ITEM      = 1 << 0
-} GtkMenuItemFlags;
-
 /* function type for moz_gtk_enable_style_props */
 typedef gint (*style_prop_t)(GtkStyle*, const gchar*, gint);
 
@@ -93,10 +87,20 @@ typedef enum {
   MOZ_GTK_BUTTON,
   /* Paints a button with image and no text */
   MOZ_GTK_TOOLBAR_BUTTON,
+
+  /* Paints the container part of a GtkCheckButton. */
+  MOZ_GTK_CHECKBUTTON_CONTAINER,
   /* Paints a GtkCheckButton. flags is a boolean, 1=checked, 0=not checked. */
   MOZ_GTK_CHECKBUTTON,
+  /* Paints the label of a GtkCheckButton (focus outline) */
+  MOZ_GTK_CHECKBUTTON_LABEL,
+
+  /* Paints the container part of a GtkRadioButton. */
+  MOZ_GTK_RADIOBUTTON_CONTAINER,
   /* Paints a GtkRadioButton. flags is a boolean, 1=checked, 0=not checked. */
   MOZ_GTK_RADIOBUTTON,
+  /* Paints the label of a GtkRadioButton (focus outline) */
+  MOZ_GTK_RADIOBUTTON_LABEL,
   /**
    * Paints the button of a GtkScrollbar. flags is a GtkArrowType giving
    * the arrow direction.
@@ -138,14 +142,7 @@ typedef enum {
   MOZ_GTK_DROPDOWN_ARROW,
   /* Paints an entry in an editable option menu */
   MOZ_GTK_DROPDOWN_ENTRY,
-  /* Paints the container part of a GtkCheckButton. */
-  MOZ_GTK_CHECKBUTTON_CONTAINER,
-  /* Paints the container part of a GtkRadioButton. */
-  MOZ_GTK_RADIOBUTTON_CONTAINER,
-  /* Paints the label of a GtkCheckButton (focus outline) */
-  MOZ_GTK_CHECKBUTTON_LABEL,
-  /* Paints the label of a GtkRadioButton (focus outline) */
-  MOZ_GTK_RADIOBUTTON_LABEL,
+
   /* Paints the background of a GtkHandleBox. */
   MOZ_GTK_TOOLBAR,
   /* Paints a toolbar separator */
@@ -186,7 +183,9 @@ typedef enum {
   MOZ_GTK_MENUARROW,
   /* Paints an arrow in a toolbar button. flags is a GtkArrowType. */
   MOZ_GTK_TOOLBARBUTTON_ARROW,
-  /* Paints items of menubar and popups. */
+  /* Paints items of menubar. */
+  MOZ_GTK_MENUBARITEM,
+  /* Paints items of popup menus. */
   MOZ_GTK_MENUITEM,
   MOZ_GTK_CHECKMENUITEM,
   MOZ_GTK_RADIOMENUITEM,

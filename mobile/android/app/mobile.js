@@ -31,6 +31,11 @@ pref("browser.chromeURL", "chrome://browser/content/");
 // expiration (but low-memory conditions may still require the tab to be zombified).
 pref("browser.tabs.expireTime", 900);
 
+// Disables zombification of background tabs under memory pressure.
+// Intended for use in testing, where we don't want the tab running the
+// test harness code to be zombified.
+pref("browser.tabs.disableBackgroundZombification", false);
+
 // Control whether tab content should try to load from disk cache when network
 // is offline.
 // Controlled by Switchboard experiment "offline-cache".
@@ -130,6 +135,7 @@ pref("browser.display.remotetabs.timeout", 10);
 pref("browser.sessionhistory.max_total_viewers", 1);
 pref("browser.sessionhistory.max_entries", 50);
 pref("browser.sessionhistory.contentViewerTimeout", 360);
+pref("browser.sessionhistory.bfcacheIgnoreMemoryPressure", false);
 
 /* session store */
 pref("browser.sessionstore.resume_session_once", false);
@@ -600,8 +606,9 @@ pref("apz.fling_curve_function_y1", "0.46");
 pref("apz.fling_curve_function_x2", "0.05");
 pref("apz.fling_curve_function_y2", "1.00");
 pref("apz.fling_curve_threshold_inches_per_ms", "0.01");
+// apz.fling_friction and apz.fling_stopped_threshold are currently ignored by Fennec.
 pref("apz.fling_friction", "0.004");
-pref("apz.fling_stopped_threshold", "0.1");
+pref("apz.fling_stopped_threshold", "0.0");
 pref("apz.max_velocity_inches_per_ms", "0.07");
 pref("apz.fling_accel_interval_ms", 750);
 pref("apz.overscroll.enabled", true);

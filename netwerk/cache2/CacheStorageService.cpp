@@ -186,6 +186,7 @@ protected:
     , mSize(0)
     , mNotifyStorage(true)
     , mVisitEntries(aVisitEntries)
+    , mCancel(false)
   {
     MOZ_ASSERT(NS_IsMainThread());
   }
@@ -204,6 +205,8 @@ protected:
 
   bool mNotifyStorage : 1;
   bool mVisitEntries : 1;
+
+  Atomic<bool> mCancel;
 };
 
 // WalkMemoryCacheRunnable
@@ -274,10 +277,10 @@ private:
         mNotifyStorage = false;
 
       } else {
-        LOG(("  entry [left=%d]", mEntryArray.Length()));
+        LOG(("  entry [left=%d, canceled=%d]", mEntryArray.Length(), (bool)mCancel));
 
-        // Third, notify each entry until depleted
-        if (!mEntryArray.Length()) {
+        // Third, notify each entry until depleted or canceled
+        if (!mEntryArray.Length() || mCancel) {
           mCallback->OnCacheEntryVisitCompleted();
           return NS_OK; // done
         }
@@ -310,13 +313,20 @@ private:
                            uint32_t aLastModifiedTime, uint32_t aExpirationTime,
                            bool aPinned)
   {
-    nsCOMPtr<nsIURI> uri;
-    nsresult rv = NS_NewURI(getter_AddRefs(uri), aURISpec);
-    if (NS_FAILED(rv))
-      return;
+    nsresult rv;
 
-    mCallback->OnCacheEntryInfo(uri, aIdEnhance, aDataSize, aFetchCount,
-                                aLastModifiedTime, aExpirationTime, aPinned);
+    nsCOMPtr<nsIURI> uri;
+    rv = NS_NewURI(getter_AddRefs(uri), aURISpec);
+    if (NS_FAILED(rv)) {
+      return;
+    }
+
+    rv = mCallback->OnCacheEntryInfo(uri, aIdEnhance, aDataSize, aFetchCount,
+                                     aLastModifiedTime, aExpirationTime, aPinned);
+    if (NS_FAILED(rv)) {
+      LOG(("  callback failed, canceling the walk"));
+      mCancel = true;
+    }
   }
 
 private:
@@ -369,14 +379,21 @@ private:
     {
       MOZ_ASSERT(NS_IsMainThread());
 
-      nsCOMPtr<nsIURI> uri;
-      nsresult rv = NS_NewURI(getter_AddRefs(uri), mURISpec);
-      if (NS_FAILED(rv))
-        return NS_OK;
+      nsresult rv;
 
-      mWalker->mCallback->OnCacheEntryInfo(
+      nsCOMPtr<nsIURI> uri;
+      rv = NS_NewURI(getter_AddRefs(uri), mURISpec);
+      if (NS_FAILED(rv)) {
+        return NS_OK;
+      }
+
+      rv = mWalker->mCallback->OnCacheEntryInfo(
         uri, mIdEnhance, mDataSize, mFetchCount,
         mLastModifiedTime, mExpirationTime, mPinned);
+      if (NS_FAILED(rv)) {
+        mWalker->mCancel = true;
+      }
+
       return NS_OK;
     }
 
@@ -432,7 +449,7 @@ private:
           }
         }
 
-        while (true) {
+        while (!mCancel) {
           if (CacheIOThread::YieldAndRerun())
             return NS_OK;
 
@@ -1403,7 +1420,7 @@ CacheStorageService::MemoryPool::PurgeAll(uint32_t aWhat)
 
 nsresult
 CacheStorageService::AddStorageEntry(CacheStorage const* aStorage,
-                                     nsIURI* aURI,
+                                     const nsACString & aURI,
                                      const nsACString & aIdExtension,
                                      bool aReplace,
                                      CacheEntryHandle** aResult)
@@ -1425,7 +1442,7 @@ CacheStorageService::AddStorageEntry(CacheStorage const* aStorage,
 
 nsresult
 CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
-                                     nsIURI* aURI,
+                                     const nsACString & aURI,
                                      const nsACString & aIdExtension,
                                      bool aWriteToDisk,
                                      bool aSkipSizeCheck,
@@ -1433,8 +1450,6 @@ CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
                                      bool aReplace,
                                      CacheEntryHandle** aResult)
 {
-  NS_ENSURE_ARG(aURI);
-
   nsresult rv;
 
   nsAutoCString entryKey;
@@ -1515,7 +1530,7 @@ CacheStorageService::AddStorageEntry(nsCSubstring const& aContextKey,
 
 nsresult
 CacheStorageService::CheckStorageEntry(CacheStorage const* aStorage,
-                                       nsIURI* aURI,
+                                       const nsACString & aURI,
                                        const nsACString & aIdExtension,
                                        bool* aResult)
 {
@@ -1528,12 +1543,8 @@ CacheStorageService::CheckStorageEntry(CacheStorage const* aStorage,
     AppendMemoryStorageID(contextKey);
   }
 
-  if (LOG_ENABLED()) {
-    nsAutoCString uriSpec;
-    aURI->GetAsciiSpec(uriSpec);
-    LOG(("CacheStorageService::CheckStorageEntry [uri=%s, eid=%s, contextKey=%s]",
-      uriSpec.get(), aIdExtension.BeginReading(), contextKey.get()));
-  }
+  LOG(("CacheStorageService::CheckStorageEntry [uri=%s, eid=%s, contextKey=%s]",
+    aURI.BeginReading(), aIdExtension.BeginReading(), contextKey.get()));
 
   {
     mozilla::MutexAutoLock lock(mLock);
@@ -1634,14 +1645,13 @@ NS_IMPL_ISUPPORTS(CacheEntryDoomByKeyCallback, CacheFileIOListener, nsIRunnable)
 
 nsresult
 CacheStorageService::DoomStorageEntry(CacheStorage const* aStorage,
-                                      nsIURI *aURI,
+                                      const nsACString & aURI,
                                       const nsACString & aIdExtension,
                                       nsICacheEntryDoomCallback* aCallback)
 {
   LOG(("CacheStorageService::DoomStorageEntry"));
 
   NS_ENSURE_ARG(aStorage);
-  NS_ENSURE_ARG(aURI);
 
   nsAutoCString contextKey;
   CacheFileUtils::AppendKeyPrefix(aStorage->LoadInfo(), contextKey);
@@ -1945,13 +1955,9 @@ void
 CacheStorageService::GetCacheEntryInfo(CacheEntry* aEntry,
                                        EntryInfoCallback *aCallback)
 {
-  nsIURI* uri = aEntry->GetURI();
-  nsAutoCString uriSpec;
-  if (uri) {
-    uri->GetAsciiSpec(uriSpec);
-  }
-
+  nsCString const uriSpec = aEntry->GetURI();
   nsCString const enhanceId = aEntry->GetEnhanceID();
+
   uint32_t dataSize;
   if (NS_FAILED(aEntry->GetStorageDataSize(&dataSize))) {
     dataSize = 0;

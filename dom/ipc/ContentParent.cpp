@@ -79,11 +79,14 @@
 #include "mozilla/ipc/FileDescriptorSetParent.h"
 #include "mozilla/ipc/FileDescriptorUtils.h"
 #include "mozilla/ipc/PFileDescriptorSetParent.h"
+#include "mozilla/ipc/PSendStreamParent.h"
+#include "mozilla/ipc/SendStreamAlloc.h"
 #include "mozilla/ipc/TestShellParent.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "mozilla/layers/PAPZParent.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
+#include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/ImageBridgeParent.h"
 #include "mozilla/layers/SharedBufferManagerParent.h"
 #include "mozilla/layout/RenderFrameParent.h"
@@ -2556,7 +2559,7 @@ ContentParent::InitInternal(ProcessPriority aInitialPriority,
     // PBrowsers are created, because they rely on the Compositor
     // already being around.  (Creation is async, so can't happen
     // on demand.)
-    bool useOffMainThreadCompositing = !!CompositorBridgeParent::CompositorLoop();
+    bool useOffMainThreadCompositing = !!CompositorThreadHolder::Loop();
     if (useOffMainThreadCompositing) {
       DebugOnly<bool> opened = PCompositorBridge::Open(this);
       MOZ_ASSERT(opened);
@@ -3817,22 +3820,53 @@ PPrintingParent*
 ContentParent::AllocPPrintingParent()
 {
 #ifdef NS_PRINTING
-  return new PrintingParent();
+  MOZ_ASSERT(!mPrintingParent,
+             "Only one PrintingParent should be created per process.");
+
+  // Create the printing singleton for this process.
+  mPrintingParent = new PrintingParent();
+  return mPrintingParent.get();
 #else
+  MOZ_ASSERT_UNREACHABLE("Should never be created if no printing.");
   return nullptr;
 #endif
 }
 
 bool
-ContentParent::RecvPPrintingConstructor(PPrintingParent* aActor)
+ContentParent::DeallocPPrintingParent(PPrintingParent* printing)
 {
+#ifdef NS_PRINTING
+  MOZ_ASSERT(mPrintingParent == printing,
+             "Only one PrintingParent should have been created per process.");
+
+  mPrintingParent = nullptr;
+#else
+  MOZ_ASSERT_UNREACHABLE("Should never have been created if no printing.");
+#endif
   return true;
 }
 
-bool
-ContentParent::DeallocPPrintingParent(PPrintingParent* printing)
+#ifdef NS_PRINTING
+already_AddRefed<embedding::PrintingParent>
+ContentParent::GetPrintingParent()
 {
-  delete printing;
+  MOZ_ASSERT(mPrintingParent);
+
+  RefPtr<embedding::PrintingParent> printingParent = mPrintingParent;
+  return printingParent.forget();
+}
+#endif
+
+PSendStreamParent*
+ContentParent::AllocPSendStreamParent()
+{
+  return mozilla::ipc::AllocPSendStreamParent();
+}
+
+bool
+ContentParent::DeallocPSendStreamParent(PSendStreamParent* aActor)
+{
+  delete aActor;
   return true;
 }
 
@@ -5784,6 +5818,7 @@ ContentParent::StartProfiler(nsIProfilerStartParams* aParams)
 
 bool
 ContentParent::RecvNotifyPushObservers(const nsCString& aScope,
+                                       const IPC::Principal& aPrincipal,
                                        const nsString& aMessageId)
 {
 #ifndef MOZ_SIMPLEPUSH
@@ -5793,7 +5828,8 @@ ContentParent::RecvNotifyPushObservers(const nsCString& aScope,
       return true;
   }
 
-  nsresult rv = pushNotifier->NotifyPushObservers(aScope, Nothing());
+  nsresult rv = pushNotifier->NotifyPushObservers(aScope, aPrincipal,
+                                                  Nothing());
   Unused << NS_WARN_IF(NS_FAILED(rv));
 #endif
   return true;
@@ -5801,6 +5837,7 @@ ContentParent::RecvNotifyPushObservers(const nsCString& aScope,
 
 bool
 ContentParent::RecvNotifyPushObserversWithData(const nsCString& aScope,
+                                               const IPC::Principal& aPrincipal,
                                                const nsString& aMessageId,
                                                InfallibleTArray<uint8_t>&& aData)
 {
@@ -5811,14 +5848,16 @@ ContentParent::RecvNotifyPushObserversWithData(const nsCString& aScope,
       return true;
   }
 
-  nsresult rv = pushNotifier->NotifyPushObservers(aScope, Some(aData));
+  nsresult rv = pushNotifier->NotifyPushObservers(aScope, aPrincipal,
+                                                  Some(aData));
   Unused << NS_WARN_IF(NS_FAILED(rv));
 #endif
   return true;
 }
 
 bool
-ContentParent::RecvNotifyPushSubscriptionChangeObservers(const nsCString& aScope)
+ContentParent::RecvNotifyPushSubscriptionChangeObservers(const nsCString& aScope,
+                                                         const IPC::Principal& aPrincipal)
 {
 #ifndef MOZ_SIMPLEPUSH
   nsCOMPtr<nsIPushNotifier> pushNotifier =
@@ -5827,15 +5866,16 @@ ContentParent::RecvNotifyPushSubscriptionChangeObservers(const nsCString& aScope
       return true;
   }
 
-  nsresult rv = pushNotifier->NotifySubscriptionChangeObservers(aScope);
+  nsresult rv = pushNotifier->NotifySubscriptionChangeObservers(aScope,
+                                                                aPrincipal);
   Unused << NS_WARN_IF(NS_FAILED(rv));
 #endif
   return true;
 }
 
 bool
-ContentParent::RecvNotifyPushSubscriptionLostObservers(const nsCString& aScope,
-                                                       const uint16_t& aReason)
+ContentParent::RecvNotifyPushSubscriptionModifiedObservers(const nsCString& aScope,
+                                                           const IPC::Principal& aPrincipal)
 {
 #ifndef MOZ_SIMPLEPUSH
   nsCOMPtr<nsIPushNotifier> pushNotifier =
@@ -5844,7 +5884,8 @@ ContentParent::RecvNotifyPushSubscriptionLostObservers(const nsCString& aScope,
       return true;
   }
 
-  nsresult rv = pushNotifier->NotifySubscriptionLostObservers(aScope, aReason);
+  nsresult rv = pushNotifier->NotifySubscriptionModifiedObservers(aScope,
+                                                                  aPrincipal);
   Unused << NS_WARN_IF(NS_FAILED(rv));
 #endif
   return true;

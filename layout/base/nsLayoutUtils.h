@@ -563,16 +563,12 @@ public:
    * properties (top, left, right, bottom) are auto. aAnchorRect is in the
    * coordinate space of aLayer's container layer (i.e. relative to the reference
    * frame of the display item which is building aLayer's container layer).
-   * aIsClipFixed is true if the layer's clip rect should also remain fixed
-   * during async-scrolling (true for fixed position elements, false for
-   * fixed backgrounds).
    */
   static void SetFixedPositionLayerData(Layer* aLayer, const nsIFrame* aViewportFrame,
                                         const nsRect& aAnchorRect,
                                         const nsIFrame* aFixedPosFrame,
                                         nsPresContext* aPresContext,
-                                        const ContainerLayerParameters& aContainerParameters,
-                                        bool aIsClipFixed);
+                                        const ContainerLayerParameters& aContainerParameters);
 
   /**
    * Return true if aPresContext's viewport has a displayport.
@@ -837,11 +833,23 @@ public:
    * aAncestor. Computes the bounding-box of the true quadrilateral.
    * Pass non-null aPreservesAxisAlignedRectangles and it will be set to true if
    * we only need to use a 2d transform that PreservesAxisAlignedRectangles().
+   *
+   * |aMatrixCache| allows for optimizations in recomputing the same matrix over
+   * and over. The argument can be one of the following values:
+   * nullptr (the default) - No optimization; the transform matrix is computed on
+   *   every call to this function.
+   * non-null pointer to an empty Maybe<Matrix4x4> - Upon return, the Maybe is
+   *   filled with the transform matrix that was computed. This can then be passed
+   *   in to subsequent calls with the same source and destination frames to avoid
+   *   recomputing the matrix.
+   * non-null pointer to a non-empty Matrix4x4 - The provided matrix will be used
+   *   as the transform matrix and applied to the rect.
    */
   static nsRect TransformFrameRectToAncestor(nsIFrame* aFrame,
                                              const nsRect& aRect,
                                              const nsIFrame* aAncestor,
-                                             bool* aPreservesAxisAlignedRectangles = nullptr);
+                                             bool* aPreservesAxisAlignedRectangles = nullptr,
+                                             mozilla::Maybe<Matrix4x4>* aMatrixCache = nullptr);
 
 
   /**
@@ -2562,11 +2570,12 @@ public:
    */
   static void
   TransformToAncestorAndCombineRegions(
-    const nsRect& aBounds,
+    const nsRegion& aRegion,
     nsIFrame* aFrame,
     const nsIFrame* aAncestorFrame,
     nsRegion* aPreciseTargetDest,
-    nsRegion* aImpreciseTargetDest);
+    nsRegion* aImpreciseTargetDest,
+    mozilla::Maybe<Matrix4x4>* aMatrixCache);
 
   /**
    * Populate aOutSize with the size of the content viewer corresponding

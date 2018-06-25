@@ -27,12 +27,13 @@ CompositorWidgetProxy::CleanupRemoteDrawing()
 }
 
 already_AddRefed<gfx::DrawTarget>
-CompositorWidgetProxy::CreateBackBufferDrawTarget(gfx::DrawTarget* aScreenTarget,
-                                                  const LayoutDeviceIntRect& aRect,
-                                                  const LayoutDeviceIntRect& aClearRect)
+CompositorWidgetProxy::GetBackBufferDrawTarget(gfx::DrawTarget* aScreenTarget,
+                                               const LayoutDeviceIntRect& aRect,
+                                               const LayoutDeviceIntRect& aClearRect)
 {
   MOZ_ASSERT(aScreenTarget);
-  gfx::SurfaceFormat format = gfx::SurfaceFormat::B8G8R8A8;
+  gfx::SurfaceFormat format =
+    aScreenTarget->GetFormat() == gfx::SurfaceFormat::B8G8R8X8 ? gfx::SurfaceFormat::B8G8R8X8 : gfx::SurfaceFormat::B8G8R8A8;
   gfx::IntSize size = aRect.ToUnknownRect().Size();
   gfx::IntSize clientSize(GetClientSize().ToUnknownSize());
 
@@ -54,6 +55,13 @@ CompositorWidgetProxy::CreateBackBufferDrawTarget(gfx::DrawTarget* aScreenTarget
     mLastBackBuffer = target;
   }
   return target.forget();
+}
+
+already_AddRefed<gfx::SourceSurface>
+CompositorWidgetProxy::EndBackBufferDrawing()
+{
+  RefPtr<gfx::SourceSurface> surface = mLastBackBuffer ? mLastBackBuffer->Snapshot() : nullptr;
+  return surface.forget();
 }
 
 uint32_t

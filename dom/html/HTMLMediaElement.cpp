@@ -1908,6 +1908,14 @@ public:
     mElement->AddDecoderPrincipalChangeObserver(this);
   }
 
+  void Destroy() override
+  {
+    MOZ_ASSERT(mElement);
+    DebugOnly<bool> res = mElement->RemoveDecoderPrincipalChangeObserver(this);
+    NS_ASSERTION(res, "Removing decoder principal changed observer failed. "
+                      "Had it already been removed?");
+  }
+
   MediaSourceEnum GetMediaSource() const override
   {
     return MediaSourceEnum::Other;
@@ -1944,11 +1952,6 @@ public:
 protected:
   virtual ~CaptureStreamTrackSource()
   {
-    if (mElement) {
-      DebugOnly<bool> res = mElement->RemoveDecoderPrincipalChangeObserver(this);
-      NS_ASSERTION(res, "Removing decoder principal changed observer failed. "
-                        "Had it already been removed?");
-    }
   }
 
   RefPtr<HTMLMediaElement> mElement;
@@ -2320,20 +2323,6 @@ HTMLMediaElement::~HTMLMediaElement()
   }
 
   WakeLockRelease();
-}
-
-void
-HTMLMediaElement::GetItemValueText(DOMString& aValue)
-{
-  // Can't call GetSrc because we don't have a JSContext
-  GetURIAttr(nsGkAtoms::src, nullptr, aValue);
-}
-
-void
-HTMLMediaElement::SetItemValueText(const nsAString& aValue)
-{
-  // Can't call SetSrc because we don't have a JSContext
-  SetAttr(kNameSpaceID_None, nsGkAtoms::src, aValue, true);
 }
 
 void HTMLMediaElement::StopSuspendingAfterFirstFrame()
@@ -2771,7 +2760,7 @@ nsresult HTMLMediaElement::BindToTree(nsIDocument* aDocument, nsIContent* aParen
   if (mDecoder) {
     // When the MediaElement is binding to tree, the dormant status is
     // aligned to document's hidden status.
-    mDecoder->NotifyOwnerActivityChanged();
+    mDecoder->NotifyOwnerActivityChanged(!IsHidden());
   }
 
   return rv;
@@ -2869,7 +2858,7 @@ void HTMLMediaElement::UnbindFromTree(bool aDeep,
 
   if (mDecoder) {
     MOZ_ASSERT(IsHidden());
-    mDecoder->NotifyOwnerActivityChanged();
+    mDecoder->NotifyOwnerActivityChanged(false);
   }
 }
 
@@ -3649,6 +3638,8 @@ void HTMLMediaElement::DecodeError()
   RemoveMediaElementFromURITable();
   mLoadingSrc = nullptr;
   mMediaSource = nullptr;
+  AudioTracks()->EmptyTracks();
+  VideoTracks()->EmptyTracks();
   if (mIsLoadingFromSourceChildren) {
     mError = nullptr;
     if (mSourceLoadCandidate) {
@@ -4529,10 +4520,8 @@ void HTMLMediaElement::NotifyOwnerDocumentActivityChanged()
 bool
 HTMLMediaElement::NotifyOwnerDocumentActivityChangedInternal()
 {
-  nsIDocument* ownerDoc = OwnerDoc();
   if (mDecoder && !IsBeingDestroyed()) {
-    mDecoder->SetElementVisibility(!ownerDoc->Hidden());
-    mDecoder->NotifyOwnerActivityChanged();
+    mDecoder->NotifyOwnerActivityChanged(!IsHidden());
   }
 
   bool pauseElement = !IsActive();

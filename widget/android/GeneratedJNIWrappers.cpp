@@ -242,6 +242,14 @@ auto GeckoAppShell::GamepadAdded(int32_t a0, int32_t a1) -> void
     return mozilla::jni::Method<GamepadAdded_t>::Call(GeckoAppShell::Context(), nullptr, a0, a1);
 }
 
+constexpr char GeckoAppShell::GetApplicationContext_t::name[];
+constexpr char GeckoAppShell::GetApplicationContext_t::signature[];
+
+auto GeckoAppShell::GetApplicationContext() -> mozilla::jni::Object::LocalRef
+{
+    return mozilla::jni::Method<GetApplicationContext_t>::Call(GeckoAppShell::Context(), nullptr);
+}
+
 constexpr char GeckoAppShell::GetConnection_t::name[];
 constexpr char GeckoAppShell::GetConnection_t::signature[];
 
@@ -1434,6 +1442,14 @@ constexpr char GeckoLayerClient::SyncViewportInfo_t::signature[];
 auto GeckoLayerClient::SyncViewportInfo(int32_t a0, int32_t a1, int32_t a2, int32_t a3, float a4, bool a5, int32_t a6) const -> mozilla::jni::Object::LocalRef
 {
     return mozilla::jni::Method<SyncViewportInfo_t>::Call(GeckoLayerClient::mCtx, nullptr, a0, a1, a2, a3, a4, a5, a6);
+}
+
+constexpr char GeckoLayerClient::SynthesizeNativeMouseEvent_t::name[];
+constexpr char GeckoLayerClient::SynthesizeNativeMouseEvent_t::signature[];
+
+auto GeckoLayerClient::SynthesizeNativeMouseEvent(int32_t a0, int32_t a1, int32_t a2) const -> void
+{
+    return mozilla::jni::Method<SynthesizeNativeMouseEvent_t>::Call(GeckoLayerClient::mCtx, nullptr, a0, a1, a2);
 }
 
 constexpr char GeckoLayerClient::SynthesizeNativeTouchPoint_t::name[];

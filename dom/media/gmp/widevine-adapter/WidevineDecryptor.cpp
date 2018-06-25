@@ -39,8 +39,6 @@ WidevineDecryptor::Init(GMPDecryptorCallback* aCallback)
 {
   MOZ_ASSERT(aCallback);
   mCallback = aCallback;
-  mCallback->SetCapabilities(GMP_EME_CAP_DECRYPT_AND_DECODE_VIDEO |
-                             GMP_EME_CAP_DECRYPT_AUDIO);
 }
 
 static SessionType
@@ -189,6 +187,7 @@ WidevineDecryptor::DecryptingComplete()
 {
   Log("WidevineDecryptor::DecryptingComplete() this=%p", this);
   mCDM = nullptr;
+  mCallback = nullptr;
   Release();
 }
 

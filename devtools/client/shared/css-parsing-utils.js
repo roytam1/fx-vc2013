@@ -14,10 +14,11 @@
 
 "use strict";
 
-const {Cc, Ci, Cu} = require("chrome");
+const {Cc, Ci} = require("chrome");
 loader.lazyRequireGetter(this, "CSS", "CSS");
 const promise = require("promise");
-Cu.import("resource://gre/modules/Task.jsm", this);
+const {getCSSLexer} = require("devtools/shared/css-lexer");
+const {Task} = require("devtools/shared/task");
 loader.lazyGetter(this, "DOMUtils", () => {
   return Cc["@mozilla.org/inspector/dom-utils;1"].getService(Ci.inIDOMUtils);
 });
@@ -51,7 +52,7 @@ const COMMENT_PARSING_HEURISTIC_BYPASS_CHAR = "!";
  * @see CSSToken for details about the returned tokens
  */
 function* cssTokenizer(string) {
-  let lexer = DOMUtils.getCSSLexer(string);
+  let lexer = getCSSLexer(string);
   while (true) {
     let token = lexer.nextToken();
     if (!token) {
@@ -77,14 +78,14 @@ function* cssTokenizer(string) {
  * simpler and better to use the CSSToken offsets, rather than line
  * and column.  Also, this function lexes the entire input string at
  * once, rather than lazily yielding a token stream.  Use
- * |cssTokenizer| or |DOMUtils.getCSSLexer| instead.
+ * |cssTokenizer| or |getCSSLexer| instead.
  *
  * @param{String} string The input string.
  * @return {Array} An array of tokens (@see CSSToken) that have
  *        line and column information.
  */
 function cssTokenizerWithLineColumn(string) {
-  let lexer = DOMUtils.getCSSLexer(string);
+  let lexer = getCSSLexer(string);
   let result = [];
   let prevToken = undefined;
   while (true) {
@@ -292,7 +293,7 @@ function parseDeclarationsInternal(inputString, parseComments,
     throw new Error("empty input string");
   }
 
-  let lexer = DOMUtils.getCSSLexer(inputString);
+  let lexer = getCSSLexer(inputString);
 
   let declarations = [getEmptyDeclaration()];
   let lastProp = declarations[0];
@@ -574,7 +575,7 @@ RuleRewriter.prototype = {
    *                  to be "lexically safe".
    */
   sanitizePropertyValue: function (text) {
-    let lexer = DOMUtils.getCSSLexer(text);
+    let lexer = getCSSLexer(text);
 
     let result = "";
     let previousOffset = 0;
@@ -907,6 +908,12 @@ RuleRewriter.prototype = {
    */
   removeProperty: function (index, name) {
     this.completeInitialization(index);
+
+    // If asked to remove a property that does not exist, bail out.
+    if (!this.decl) {
+      return;
+    }
+
     let copyOffset = this.decl.offsets[1];
     // Maybe removing this rule left us with a completely blank
     // line.  In this case, we'll delete the whole thing.  We only

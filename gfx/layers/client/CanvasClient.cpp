@@ -390,7 +390,8 @@ CanvasClientSharedSurface::UpdateRenderer(gfx::IntSize aSize, Renderer& aRendere
     }
   } else {
     mShSurfClient = gl->Screen()->Front();
-    if (mShSurfClient && mShSurfClient->GetAllocator() != GetForwarder()) {
+    if (mShSurfClient && mShSurfClient->GetAllocator() &&
+        mShSurfClient->GetAllocator()->AsCompositableForwarder() != GetForwarder()) {
       mShSurfClient = CloneSurface(mShSurfClient->Surf(), gl->Screen()->Factory());
     }
     if (!mShSurfClient) {
@@ -500,6 +501,14 @@ CanvasClientSharedSurface::Updated()
   //            the new VRDisplay API.
   t->mInputFrameID = VRManagerChild::Get()->GetInputFrameID();
   forwarder->UseTextures(this, textures);
+}
+
+void
+CanvasClientSharedSurface::OnDetach() {
+  if (mShSurfClient) {
+    mShSurfClient->CancelWaitForCompositorRecycle();
+  }
+  ClearSurfaces();
 }
 
 void

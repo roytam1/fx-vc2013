@@ -44,6 +44,8 @@
 #include "mozilla/layers/APZCTreeManager.h"
 #include "mozilla/layers/APZThreadUtils.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
+#include "mozilla/layers/CompositorThread.h"
+#include "mozilla/layers/CompositorSession.h"
 #include "mozilla/TouchEvents.h"
 #include "HwcComposer2D.h"
 
@@ -105,7 +107,7 @@ nsWindow::DoDraw(void)
         return;
     }
 
-    nsWindow *targetWindow = (nsWindow *)windows[0];
+    RefPtr<nsWindow> targetWindow = (nsWindow *)windows[0];
     while (targetWindow->GetLastChild()) {
         targetWindow = (nsWindow *)targetWindow->GetLastChild();
     }
@@ -115,15 +117,15 @@ nsWindow::DoDraw(void)
         listener->WillPaintWindow(targetWindow);
     }
 
-    LayerManager* lm = targetWindow->GetLayerManager();
-    if (mozilla::layers::LayersBackend::LAYERS_CLIENT == lm->GetBackendType()) {
-        // No need to do anything, the compositor will handle drawing
-    } else {
-        NS_RUNTIMEABORT("Unexpected layer manager type");
-    }
-
     listener = targetWindow->GetWidgetListener();
     if (listener) {
+        LayerManager* lm = targetWindow->GetLayerManager();
+        if (mozilla::layers::LayersBackend::LAYERS_CLIENT == lm->GetBackendType()) {
+            // No need to do anything, the compositor will handle drawing
+        } else {
+            NS_RUNTIMEABORT("Unexpected layer manager type");
+        }
+
         listener->DidPaintWindow();
     }
 }
@@ -131,7 +133,7 @@ nsWindow::DoDraw(void)
 void
 nsWindow::ConfigureAPZControllerThread()
 {
-    APZThreadUtils::SetControllerThread(CompositorBridgeParent::CompositorLoop());
+    APZThreadUtils::SetControllerThread(CompositorThreadHolder::Loop());
 }
 
 /*static*/ nsEventStatus
@@ -697,10 +699,10 @@ nsWindow::GetLayerManager(PLayerTransactionChild* aShadowManager,
     }
 
     CreateCompositor();
-    if (mCompositorBridgeParent) {
-        mScreen->SetCompositorBridgeParent(mCompositorBridgeParent);
+    if (RefPtr<CompositorBridgeParent> bridge = GetCompositorBridgeParent()) {
+        mScreen->SetCompositorBridgeParent(bridge);
         if (mScreen->IsPrimaryScreen()) {
-            mComposer2D->SetCompositorBridgeParent(mCompositorBridgeParent);
+            mComposer2D->SetCompositorBridgeParent(bridge);
         }
     }
     MOZ_ASSERT(mLayerManager);
@@ -710,7 +712,7 @@ nsWindow::GetLayerManager(PLayerTransactionChild* aShadowManager,
 void
 nsWindow::DestroyCompositor()
 {
-    if (mCompositorBridgeParent) {
+    if (RefPtr<CompositorBridgeParent> bridge = GetCompositorBridgeParent()) {
         mScreen->SetCompositorBridgeParent(nullptr);
         if (mScreen->IsPrimaryScreen()) {
             // Unset CompositorBridgeParent
@@ -718,18 +720,6 @@ nsWindow::DestroyCompositor()
         }
     }
     nsBaseWidget::DestroyCompositor();
-}
-
-CompositorBridgeParent*
-nsWindow::NewCompositorBridgeParent(int aSurfaceWidth, int aSurfaceHeight)
-{
-    if (!mCompositorWidgetProxy) {
-        mCompositorWidgetProxy = NewCompositorWidgetProxy();
-    }
-    return new CompositorBridgeParent(mCompositorWidgetProxy,
-                                      GetDefaultScale(),
-                                      UseAPZ(),
-                                      true, aSurfaceWidth, aSurfaceHeight);
 }
 
 void
@@ -804,4 +794,10 @@ nsWindow::GetComposer2D()
     }
 
     return mComposer2D;
+}
+
+CompositorBridgeParent*
+nsWindow::GetCompositorBridgeParent() const
+{
+    return mCompositorSession ? mCompositorSession->GetInProcessBridge() : nullptr;
 }

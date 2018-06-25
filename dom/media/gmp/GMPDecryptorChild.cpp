@@ -6,6 +6,7 @@
 #include "GMPDecryptorChild.h"
 #include "GMPContentChild.h"
 #include "GMPChild.h"
+#include "base/task.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/unused.h"
 #include "runnable_utils.h"
@@ -193,7 +194,7 @@ GMPDecryptorChild::Decrypted(GMPBuffer* aBuffer, GMPErr aResult)
 void
 GMPDecryptorChild::SetCapabilities(uint64_t aCaps)
 {
-  CALL_ON_GMP_THREAD(SendSetCaps, aCaps);
+  // Deprecated.
 }
 
 void

@@ -78,10 +78,6 @@
 #include "shell/jsoptparse.h"
 #include "shell/jsshell.h"
 #include "shell/OSObject.h"
-#include "threading/ConditionVariable.h"
-#include "threading/LockGuard.h"
-#include "threading/Mutex.h"
-#include "threading/Thread.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/Compression.h"
 #include "vm/Debugger.h"
@@ -166,13 +162,13 @@ struct ShellRuntime
     /*
      * Watchdog thread state.
      */
-    Mutex watchdogLock;
-    ConditionVariable watchdogWakeup;
-    Maybe<Thread> watchdogThread;
+    PRLock* watchdogLock;
+    PRCondVar* watchdogWakeup;
+    PRThread* watchdogThread;
     bool watchdogHasTimeout;
     int64_t watchdogTimeout;
 
-    ConditionVariable sleepWakeup;
+    PRCondVar* sleepWakeup;
 
     int exitCode;
     bool quitting;
@@ -190,7 +186,8 @@ static bool enableNativeRegExp = false;
 static bool enableUnboxedArrays = false;
 static bool enableSharedMemory = SHARED_MEMORY_DEFAULT;
 #ifdef JS_GC_ZEAL
-static char gZealStr[128];
+static uint32_t gZealBits = 0;
+static uint32_t gZealFrequency = 0;
 #endif
 static bool printTiming = false;
 static const char* jsCacheDir = nullptr;
@@ -214,6 +211,9 @@ mozilla::Atomic<bool> jsCacheOpened(false);
 
 static bool
 SetTimeoutValue(JSContext* cx, double t);
+
+static bool
+InitWatchdog(JSRuntime* rt);
 
 static void
 KillWatchdog(JSRuntime *rt);
@@ -308,8 +308,12 @@ ShellRuntime::ShellRuntime(JSRuntime* rt)
     interruptFunc(rt, NullValue()),
     lastWarningEnabled(false),
     lastWarning(rt, NullValue()),
+    watchdogLock(nullptr),
+    watchdogWakeup(nullptr),
+    watchdogThread(nullptr),
     watchdogHasTimeout(false),
     watchdogTimeout(0),
+    sleepWakeup(nullptr),
     exitCode(0),
     quitting(false),
     gotError(false)
@@ -2920,6 +2924,12 @@ WorkerMain(void* arg)
     JS_InitDestroyPrincipalsCallback(rt, ShellPrincipals::destroy);
     SetWorkerRuntimeOptions(rt);
 
+    if (!InitWatchdog(rt)) {
+        JS_DestroyRuntime(rt);
+        js_delete(input);
+        return;
+    }
+
     JSContext* cx = NewContext(rt);
     if (!cx) {
         JS_DestroyRuntime(rt);
@@ -3095,66 +3105,88 @@ Sleep_fn(JSContext* cx, unsigned argc, Value* vp)
                   ? 0
                   : int64_t(PRMJ_USEC_PER_SEC * t_secs);
     }
-    {
-        LockGuard<Mutex> guard(sr->watchdogLock);
-        TimeStamp toWakeup = TimeStamp::Now() + duration;
-        for (;;) {
-            sr->sleepWakeup.wait_for(guard, duration);
-            if (sr->serviceInterrupt)
-                break;
-            auto now = TimeStamp::Now();
-            if (now >= toWakeup)
-                break;
-            duration = toWakeup - now;
-        }
+    PR_Lock(sr->watchdogLock);
+    int64_t to_wakeup = PRMJ_Now() + t_ticks;
+    for (;;) {
+        PR_WaitCondVar(sr->sleepWakeup, PR_MillisecondsToInterval(t_ticks / 1000));
+        if (sr->serviceInterrupt)
+            break;
+        int64_t now = PRMJ_Now();
+        if (!IsBefore(now, to_wakeup))
+            break;
+        t_ticks = to_wakeup - now;
     }
+    PR_Unlock(sr->watchdogLock);
     args.rval().setUndefined();
     return !sr->serviceInterrupt;
+}
+
+static bool
+InitWatchdog(JSRuntime* rt)
+{
+    ShellRuntime* sr = GetShellRuntime(rt);
+    MOZ_ASSERT(!sr->watchdogThread);
+    sr->watchdogLock = PR_NewLock();
+    if (sr->watchdogLock) {
+        sr->watchdogWakeup = PR_NewCondVar(sr->watchdogLock);
+        if (sr->watchdogWakeup) {
+            sr->sleepWakeup = PR_NewCondVar(sr->watchdogLock);
+            if (sr->sleepWakeup)
+                return true;
+            PR_DestroyCondVar(sr->watchdogWakeup);
+        }
+        PR_DestroyLock(sr->watchdogLock);
+    }
+    return false;
 }
 
 static void
 KillWatchdog(JSRuntime* rt)
 {
     ShellRuntime* sr = GetShellRuntime(rt);
-    Maybe<Thread> thread;
+    PRThread* thread;
 
-    {
-        LockGuard<Mutex> guard(sr->watchdogLock);
-        Swap(sr->watchdogThread, thread);
-        if (thread) {
-            // The watchdog thread becoming Nothing is its signal to exit.
-            sr->watchdogWakeup.notify_one();
-        }
+    PR_Lock(sr->watchdogLock);
+    thread = sr->watchdogThread;
+    if (thread) {
+        /*
+         * The watchdog thread is running, tell it to terminate waking it up
+         * if necessary.
+         */
+        sr->watchdogThread = nullptr;
+        PR_NotifyCondVar(sr->watchdogWakeup);
     }
+    PR_Unlock(sr->watchdogLock);
     if (thread)
-        thread->join();
-
-    MOZ_ASSERT(!sr->watchdogThread);
+        PR_JoinThread(thread);
+    PR_DestroyCondVar(sr->sleepWakeup);
+    PR_DestroyCondVar(sr->watchdogWakeup);
+    PR_DestroyLock(sr->watchdogLock);
 }
 
 static void
-WatchdogMain(JSRuntime* rt)
+WatchdogMain(void* arg)
 {
-    ThisThread::SetName("JS Watchdog");
+    PR_SetCurrentThreadName("JS Watchdog");
 
+    JSRuntime* rt = (JSRuntime*) arg;
     ShellRuntime* sr = GetShellRuntime(rt);
 
-    LockGuard<Mutex> guard(sr->watchdogLock);
+    PR_Lock(sr->watchdogLock);
     while (sr->watchdogThread) {
         int64_t now = PRMJ_Now();
-        if (sr->watchdogTimeout && now >= sr->watchdogTimeout.value()) {
+        if (sr->watchdogHasTimeout && !IsBefore(now, sr->watchdogTimeout)) {
             /*
              * The timeout has just expired. Request an interrupt callback
              * outside the lock.
              */
             sr->watchdogHasTimeout = false;
-            {
-                UnlockGuard<Mutex> unlock(guard);
-                CancelExecution(rt);
-            }
+            PR_Unlock(sr->watchdogLock);
+            CancelExecution(rt);
+            PR_Lock(sr->watchdogLock);
 
             /* Wake up any threads doing sleep. */
-            sr->sleepWakeup.notify_all();
+            PR_NotifyAllCondVar(sr->sleepWakeup);
         } else {
             if (sr->watchdogHasTimeout) {
                 /*
@@ -3167,9 +3199,12 @@ WatchdogMain(JSRuntime* rt)
             uint64_t sleepDuration = PR_INTERVAL_NO_TIMEOUT;
             if (sr->watchdogHasTimeout)
                 sleepDuration = PR_TicksPerSecond() / 10;
-            sr->watchdogWakeup.wait_for(guard, sleepDuration);
+            mozilla::DebugOnly<PRStatus> status =
+              PR_WaitCondVar(sr->watchdogWakeup, sleepDuration);
+            MOZ_ASSERT(status == PR_SUCCESS);
         }
     }
+    PR_Unlock(sr->watchdogLock);
 }
 
 static bool
@@ -3178,22 +3213,34 @@ ScheduleWatchdog(JSRuntime* rt, double t)
     ShellRuntime* sr = GetShellRuntime(rt);
 
     if (t <= 0) {
-        LockGuard<Mutex> guard(sr->watchdogLock);
+        PR_Lock(sr->watchdogLock);
         sr->watchdogHasTimeout = false;
+        PR_Unlock(sr->watchdogLock);
         return true;
     }
 
     int64_t interval = int64_t(ceil(t * PRMJ_USEC_PER_SEC));
     int64_t timeout = PRMJ_Now() + interval;
-    LockGuard<Mutex> guard(sr->watchdogLock);
+    PR_Lock(sr->watchdogLock);
     if (!sr->watchdogThread) {
-        MOZ_ASSERT(!sr->watchdogTimeout);
-        sr->watchdogThread.emplace(WatchdogMain, rt);
-    } else if (!sr->watchdogTimeout || timeout < sr->watchdogTimeout.value()) {
-        sr->watchdogWakeup.notify_one();
+        MOZ_ASSERT(!sr->watchdogHasTimeout);
+        sr->watchdogThread = PR_CreateThread(PR_USER_THREAD,
+                                          WatchdogMain,
+                                          rt,
+                                          PR_PRIORITY_NORMAL,
+                                          PR_GLOBAL_THREAD,
+                                          PR_JOINABLE_THREAD,
+                                          0);
+        if (!sr->watchdogThread) {
+            PR_Unlock(sr->watchdogLock);
+            return false;
+        }
+    } else if (!sr->watchdogHasTimeout || IsBefore(timeout, sr->watchdogTimeout)) {
+         PR_NotifyCondVar(sr->watchdogWakeup);
     }
     sr->watchdogHasTimeout = true;
     sr->watchdogTimeout = timeout;
+    PR_Unlock(sr->watchdogLock);
     return true;
 }
 
@@ -6967,12 +7014,11 @@ SetRuntimeOptions(JSRuntime* rt, const OptionParser& op)
 
 #ifdef JS_GC_ZEAL
     const char* zealStr = op.getStringOption("gc-zeal");
-    gZealStr[0] = 0;
     if (zealStr) {
         if (!rt->gc.parseAndSetZeal(zealStr))
             return false;
-        strncpy(gZealStr, zealStr, sizeof(gZealStr));
-        gZealStr[sizeof(gZealStr)-1] = 0;
+        uint32_t nextScheduled;
+        rt->gc.getZealBits(&gZealBits, &gZealFrequency, &nextScheduled);
     }
 #endif
 
@@ -6993,8 +7039,13 @@ SetWorkerRuntimeOptions(JSRuntime* rt)
     rt->profilingScripts = enableCodeCoverage || enableDisassemblyDumps;
 
 #ifdef JS_GC_ZEAL
-    if (*gZealStr)
-        rt->gc.parseAndSetZeal(gZealStr);
+    if (gZealBits && gZealFrequency) {
+#define ZEAL_MODE(_, value)                        \
+        if (gZealBits & (1 << value))              \
+            rt->gc.setZeal(value, gZealFrequency);
+        JS_FOR_EACH_ZEAL_MODE(ZEAL_MODE)
+#undef ZEAL_MODE
+    }
 #endif
 
     JS_SetNativeStackQuota(rt, gMaxStackSize);
@@ -7276,7 +7327,7 @@ main(int argc, char** argv, char** envp)
 #endif
         || !op.addIntOption('\0', "nursery-size", "SIZE-MB", "Set the maximum nursery size in MB", 16)
 #ifdef JS_GC_ZEAL
-        || !op.addStringOption('z', "gc-zeal", "LEVEL[,N]", gc::ZealModeHelpText)
+        || !op.addStringOption('z', "gc-zeal", "LEVEL(;LEVEL)*[,N]", gc::ZealModeHelpText)
 #endif
         || !op.addStringOption('\0', "module-load-path", "DIR", "Set directory to load modules from")
     )
@@ -7385,6 +7436,9 @@ main(int argc, char** argv, char** envp)
     JS::dbg::SetDebuggerMallocSizeOf(rt, moz_malloc_size_of);
 
     if (!offThreadState.init())
+        return 1;
+
+    if (!InitWatchdog(rt))
         return 1;
 
     cx = NewContext(rt);

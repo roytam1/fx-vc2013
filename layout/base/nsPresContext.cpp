@@ -1596,10 +1596,11 @@ nsPresContext::ThemeChanged()
   }
 }
 
-static void
+static bool
 NotifyThemeChanged(TabParent* aTabParent, void* aArg)
 {
   aTabParent->ThemeChanged();
+  return false;
 }
 
 void
@@ -1948,11 +1949,12 @@ nsPresContext::HandleMediaFeatureValuesChangedEvent()
   }
 }
 
-static void
+static bool
 NotifyTabSizeModeChanged(TabParent* aTab, void* aArg)
 {
   nsSizeMode* sizeMode = static_cast<nsSizeMode*>(aArg);
   aTab->SizeModeChanged(*sizeMode);
+  return false;
 }
 
 void
@@ -2730,21 +2732,6 @@ nsPresContext::IsRootContentDocument() const
 
   nsIFrame* f = view->GetFrame();
   return (f && f->PresContext()->IsChrome());
-}
-
-bool
-nsPresContext::IsCrossProcessRootContentDocument()
-{
-  if (!IsRootContentDocument()) {
-    return false;
-  }
-
-  if (XRE_IsParentProcess()) {
-    return true;
-  }
-
-  TabChild* tabChild = TabChild::GetFrom(mShell);
-  return (tabChild && tabChild->IsRootContentDocument());
 }
 
 bool nsPresContext::GetPaintFlashing() const

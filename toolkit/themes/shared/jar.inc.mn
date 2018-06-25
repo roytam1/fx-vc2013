@@ -21,6 +21,7 @@ toolkit.jar:
   skin/classic/global/aboutSupport.css                     (../../shared/aboutSupport.css)
   skin/classic/global/appPicker.css                        (../../shared/appPicker.css)
   skin/classic/global/config.css                           (../../shared/config.css)
+  skin/classic/global/icons/find-arrows.svg                (../../shared/icons/find-arrows.svg)
   skin/classic/global/icons/info.svg                       (../../shared/incontent-icons/info.svg)
   skin/classic/global/icons/loading-inverted.png           (../../shared/icons/loading-inverted.png)
   skin/classic/global/icons/loading-inverted@2x.png        (../../shared/icons/loading-inverted@2x.png)
@@ -54,6 +55,8 @@ toolkit.jar:
   skin/classic/global/reader/RM-Type-Controls-Arrow.svg    (../../shared/reader/RM-Type-Controls-Arrow.svg)
   skin/classic/global/reader/RM-Content-Width-Minus-42x16.svg            (../../shared/reader/RM-Content-Width-Minus-42x16.svg)
   skin/classic/global/reader/RM-Content-Width-Plus-44x16.svg             (../../shared/reader/RM-Content-Width-Plus-44x16.svg)
+  skin/classic/global/reader/RM-Line-Height-Minus-38x14.svg            (../../shared/reader/RM-Line-Height-Minus-38x14.svg)
+  skin/classic/global/reader/RM-Line-Height-Plus-38x24.svg             (../../shared/reader/RM-Line-Height-Plus-38x24.svg)
 #ifdef MOZ_PLACES
   skin/classic/mozapps/places/defaultFavicon.png           (../../shared/places/defaultFavicon.png)
   skin/classic/mozapps/places/defaultFavicon@2x.png        (../../shared/places/defaultFavicon@2x.png)

@@ -156,6 +156,7 @@ public:
   using nsObjectLoadingContent::GetContentDocument;
   nsPIDOMWindowOuter* GetContentWindow();
   using nsIConstraintValidation::CheckValidity;
+  using nsIConstraintValidation::ReportValidity;
   using nsIConstraintValidation::GetValidationMessage;
   void GetAlign(DOMString& aValue)
   {
@@ -252,9 +253,6 @@ private:
   {
     return nsIContentPolicy::TYPE_INTERNAL_OBJECT;
   }
-
-  virtual void GetItemValueText(DOMString& text) override;
-  virtual void SetItemValueText(const nsAString& text) override;
 
   virtual ~HTMLObjectElement();
 

@@ -23,8 +23,6 @@ static GtkWidget* gProtoLayout;
 static GtkWidget* gButtonWidget;
 static GtkWidget* gToggleButtonWidget;
 static GtkWidget* gButtonArrowWidget;
-static GtkWidget* gCheckboxWidget;
-static GtkWidget* gRadiobuttonWidget;
 static GtkWidget* gSpinWidget;
 static GtkWidget* gHScaleWidget;
 static GtkWidget* gVScaleWidget;
@@ -44,10 +42,6 @@ static GtkWidget* gProgressWidget;
 static GtkWidget* gTabWidget;
 static GtkWidget* gTextViewWidget;
 static GtkWidget* gTooltipWidget;
-static GtkWidget* gMenuBarWidget;
-static GtkWidget* gMenuBarItemWidget;
-static GtkWidget* gMenuPopupWidget;
-static GtkWidget* gMenuItemWidget;
 static GtkWidget* gImageMenuItemWidget;
 static GtkWidget* gCheckMenuItemWidget;
 static GtkWidget* gTreeViewWidget;
@@ -181,26 +175,6 @@ ensure_button_arrow_widget()
         gtk_container_add(GTK_CONTAINER(gToggleButtonWidget), gButtonArrowWidget);
         gtk_widget_realize(gButtonArrowWidget);
         gtk_widget_show(gButtonArrowWidget);
-    }
-    return MOZ_GTK_SUCCESS;
-}
-
-static gint
-ensure_checkbox_widget()
-{
-    if (!gCheckboxWidget) {
-        gCheckboxWidget = gtk_check_button_new_with_label("M");
-        setup_widget_prototype(gCheckboxWidget);
-    }
-    return MOZ_GTK_SUCCESS;
-}
-
-static gint
-ensure_radiobutton_widget()
-{
-    if (!gRadiobuttonWidget) {
-        gRadiobuttonWidget = gtk_radio_button_new_with_label(NULL, "M");
-        setup_widget_prototype(gRadiobuttonWidget);
     }
     return MOZ_GTK_SUCCESS;
 }
@@ -527,61 +501,11 @@ ensure_frame_widget()
 }
 
 static gint
-ensure_menu_bar_widget()
-{
-    if (!gMenuBarWidget) {
-        gMenuBarWidget = gtk_menu_bar_new();
-        setup_widget_prototype(gMenuBarWidget);
-    }
-    return MOZ_GTK_SUCCESS;
-}
-
-static gint
-ensure_menu_bar_item_widget()
-{
-    if (!gMenuBarItemWidget) {
-        ensure_menu_bar_widget();
-        gMenuBarItemWidget = gtk_menu_item_new();
-        gtk_menu_shell_append(GTK_MENU_SHELL(gMenuBarWidget),
-                              gMenuBarItemWidget);
-        gtk_widget_realize(gMenuBarItemWidget);
-    }
-    return MOZ_GTK_SUCCESS;
-}
-
-static gint
-ensure_menu_popup_widget()
-{
-    if (!gMenuPopupWidget) {
-        ensure_window_widget();
-        gMenuPopupWidget = gtk_menu_new();
-        gtk_menu_attach_to_widget(GTK_MENU(gMenuPopupWidget), gProtoWindow,
-                                  NULL);
-        gtk_widget_realize(gMenuPopupWidget);
-    }
-    return MOZ_GTK_SUCCESS;
-}
-
-static gint
-ensure_menu_item_widget()
-{
-    if (!gMenuItemWidget) {
-        ensure_menu_popup_widget();
-        gMenuItemWidget = gtk_menu_item_new_with_label("M");
-        gtk_menu_shell_append(GTK_MENU_SHELL(gMenuPopupWidget),
-                              gMenuItemWidget);
-        gtk_widget_realize(gMenuItemWidget);
-    }
-    return MOZ_GTK_SUCCESS;
-}
-
-static gint
 ensure_image_menu_item_widget()
 {
     if (!gImageMenuItemWidget) {
-        ensure_menu_popup_widget();
         gImageMenuItemWidget = gtk_image_menu_item_new();
-        gtk_menu_shell_append(GTK_MENU_SHELL(gMenuPopupWidget),
+        gtk_menu_shell_append(GTK_MENU_SHELL(GetWidget(MOZ_GTK_MENUPOPUP)),
                               gImageMenuItemWidget);
         gtk_widget_realize(gImageMenuItemWidget);
     }
@@ -592,9 +516,8 @@ static gint
 ensure_menu_separator_widget()
 {
     if (!gMenuSeparatorWidget) {
-        ensure_menu_popup_widget();
         gMenuSeparatorWidget = gtk_separator_menu_item_new();
-        gtk_menu_shell_append(GTK_MENU_SHELL(gMenuPopupWidget),
+        gtk_menu_shell_append(GTK_MENU_SHELL(GetWidget(MOZ_GTK_MENUPOPUP)),
                               gMenuSeparatorWidget);
         gtk_widget_realize(gMenuSeparatorWidget);
     }
@@ -605,9 +528,8 @@ static gint
 ensure_check_menu_item_widget()
 {
     if (!gCheckMenuItemWidget) {
-        ensure_menu_popup_widget();
-        gCheckMenuItemWidget = gtk_check_menu_item_new_with_label("M");
-        gtk_menu_shell_append(GTK_MENU_SHELL(gMenuPopupWidget),
+        gCheckMenuItemWidget = gtk_check_menu_item_new();
+        gtk_menu_shell_append(GTK_MENU_SHELL(GetWidget(MOZ_GTK_MENUPOPUP)),
                               gCheckMenuItemWidget);
         gtk_widget_realize(gCheckMenuItemWidget);
     }
@@ -729,26 +651,20 @@ moz_gtk_init()
 gint
 moz_gtk_checkbox_get_metrics(gint* indicator_size, gint* indicator_spacing)
 {
-    ensure_checkbox_widget();
-
-    gtk_style_context_get_style(gtk_widget_get_style_context(gCheckboxWidget),
-                                "indicator_size", indicator_size,
-                                "indicator_spacing", indicator_spacing,
-                                NULL);
-
+    gtk_widget_style_get(GetWidget(MOZ_GTK_CHECKBUTTON_CONTAINER),
+                         "indicator_size", indicator_size,
+                         "indicator_spacing", indicator_spacing,
+                         NULL);
     return MOZ_GTK_SUCCESS;
 }
 
 gint
 moz_gtk_radio_get_metrics(gint* indicator_size, gint* indicator_spacing)
 {
-    ensure_radiobutton_widget();
-
-    gtk_style_context_get_style(gtk_widget_get_style_context(gRadiobuttonWidget),
-                                "indicator_size", indicator_size,
-                                "indicator_spacing", indicator_spacing,
-                                NULL);
-
+    gtk_widget_style_get(GetWidget(MOZ_GTK_RADIOBUTTON_CONTAINER),
+                         "indicator_size", indicator_size,
+                         "indicator_spacing", indicator_spacing,
+                          NULL);
     return MOZ_GTK_SUCCESS;
 }
 
@@ -772,11 +688,9 @@ moz_gtk_get_focus_outline_size(gint* focus_h_width, gint* focus_v_width)
 gint
 moz_gtk_menuitem_get_horizontal_padding(gint* horizontal_padding)
 {
-    ensure_menu_item_widget();
-
-    gtk_style_context_get_style(gtk_widget_get_style_context(gMenuItemWidget),
-                                "horizontal-padding", horizontal_padding,
-                                NULL);
+    gtk_widget_style_get(GetWidget(MOZ_GTK_MENUITEM),
+                         "horizontal-padding", horizontal_padding,
+                         nullptr);
 
     return MOZ_GTK_SUCCESS;
 }
@@ -937,16 +851,14 @@ moz_gtk_toggle_paint(cairo_t *cr, GdkRectangle* rect,
     gint indicator_size, indicator_spacing;
     gint x, y, width, height;
     gint focus_x, focus_y, focus_width, focus_height;
-    GtkWidget *w;
     GtkStyleContext *style;
 
-    if (isradio) {
-        moz_gtk_radio_get_metrics(&indicator_size, &indicator_spacing);
-        w = gRadiobuttonWidget;
-    } else {
-        moz_gtk_checkbox_get_metrics(&indicator_size, &indicator_spacing);
-        w = gCheckboxWidget;
-    }
+    GtkWidget *widget = GetWidget(isradio ? MOZ_GTK_RADIOBUTTON_CONTAINER :
+                                            MOZ_GTK_CHECKBUTTON_CONTAINER);
+    gtk_widget_style_get(widget,
+                         "indicator_size", &indicator_size,
+                         "indicator_spacing", &indicator_spacing,
+                         nullptr);
 
     // XXX we should assert rect->height >= indicator_size too
     // after bug 369581 is fixed.
@@ -963,12 +875,9 @@ moz_gtk_toggle_paint(cairo_t *cr, GdkRectangle* rect,
     focus_y = y - indicator_spacing;
     focus_width = width + 2 * indicator_spacing;
     focus_height = height + 2 * indicator_spacing;
-  
-    style = gtk_widget_get_style_context(w);
 
-    gtk_widget_set_sensitive(w, !state->disabled);
-    gtk_widget_set_direction(w, direction);
-    gtk_style_context_save(style);
+    style = ClaimStyleContext(isradio ? MOZ_GTK_RADIOBUTTON :
+                                        MOZ_GTK_CHECKBUTTON);
 
     if (selected)
         state_flags = static_cast<GtkStateFlags>(state_flags|checkbox_check_state);
@@ -977,9 +886,14 @@ moz_gtk_toggle_paint(cairo_t *cr, GdkRectangle* rect,
         state_flags = static_cast<GtkStateFlags>(state_flags|GTK_STATE_FLAG_INCONSISTENT);
 
     gtk_style_context_set_state(style, state_flags);
+    gtk_style_context_set_direction(style, direction);
+
+    if (gtk_check_version(3, 20, 0) == nullptr) {
+        gtk_render_background(style, cr, x, y, width, height);
+        gtk_render_frame(style, cr, x, y, width, height);
+    }
 
     if (isradio) {
-        gtk_style_context_add_class(style, GTK_STYLE_CLASS_RADIO);
         gtk_render_option(style, cr, x, y, width, height);
         if (state->focused) {
             gtk_render_focus(style, cr, focus_x, focus_y,
@@ -987,19 +901,14 @@ moz_gtk_toggle_paint(cairo_t *cr, GdkRectangle* rect,
         }
     }
     else {
-       /*
-        * 'indeterminate' type on checkboxes. In GTK, the shadow type
-        * must also be changed for the state to be drawn.
-        */        
-        gtk_style_context_add_class(style, GTK_STYLE_CLASS_CHECK);
-        gtk_toggle_button_set_inconsistent(GTK_TOGGLE_BUTTON(gCheckboxWidget), inconsistent);
-        gtk_render_check(style, cr, x, y, width, height);        
+        gtk_render_check(style, cr, x, y, width, height);
         if (state->focused) {
-            gtk_render_focus(style, cr, 
+            gtk_render_focus(style, cr,
                              focus_x, focus_y, focus_width, focus_height);
         }
     }
-    gtk_style_context_restore(style);
+
+    ReleaseStyleContext(style);
 
     return MOZ_GTK_SUCCESS;
 }
@@ -1169,8 +1078,6 @@ moz_gtk_scrollbar_trough_paint(WidgetNodeType widget,
                           MOZ_GTK_SCROLLBAR_TROUGH_HORIZONTAL :
                           MOZ_GTK_SCROLLBAR_TROUGH_VERTICAL,
                           direction);
-    // TODO - integate with ClaimStyleContext()?
-    gtk_style_context_set_direction(style, direction);
 
     gtk_render_background(style, cr, rect->x, rect->y, rect->width, rect->height);
     gtk_render_frame(style, cr, rect->x, rect->y, rect->width, rect->height);
@@ -1193,12 +1100,7 @@ moz_gtk_scrollbar_thumb_paint(WidgetNodeType widget,
     GtkStateFlags state_flags = GetStateFlagsFromGtkWidgetState(state);
     GtkBorder margin;
 
-    GtkStyleContext* style = ClaimStyleContext(widget, direction);
-
-    // TODO - integate those with ClaimStyleContext()?
-    gtk_style_context_set_state(style, state_flags);
-    gtk_style_context_set_direction(style, direction);
-
+    GtkStyleContext* style = ClaimStyleContext(widget, direction, state_flags);
     gtk_style_context_get_margin (style, state_flags, &margin);
 
     gtk_render_slider(style, cr,
@@ -1810,33 +1712,23 @@ moz_gtk_combo_box_entry_button_paint(cairo_t *cr, GdkRectangle* rect,
 static gint
 moz_gtk_container_paint(cairo_t *cr, GdkRectangle* rect,
                         GtkWidgetState* state, 
-                        gboolean isradio, GtkTextDirection direction)
+                        WidgetNodeType  widget_type,
+                        GtkTextDirection direction)
 {
+    GtkStyleContext* style = ClaimStyleContext(widget_type);
     GtkStateFlags state_flags = GetStateFlagsFromGtkWidgetState(state);
-    GtkStyleContext* style;
-    GtkWidget *widget;
 
-    if (isradio) {
-        ensure_radiobutton_widget();
-        widget = gRadiobuttonWidget;
-    } else {
-        ensure_checkbox_widget();
-        widget = gCheckboxWidget;
-    }
-    gtk_widget_set_direction(widget, direction);
-
-    style = gtk_widget_get_style_context(widget);
-    gtk_style_context_save(style);
     gtk_style_context_set_state(style, state_flags);
-  
+    gtk_style_context_set_direction(style, direction);
+
     /* this is for drawing a prelight box */
     if (state_flags & GTK_STATE_FLAG_PRELIGHT) {
         gtk_render_background(style, cr,
                               rect->x, rect->y, rect->width, rect->height);
     }
-  
-    gtk_style_context_restore(style);
-  
+
+    ReleaseStyleContext(style);
+
     return MOZ_GTK_SUCCESS;
 }
 
@@ -1845,32 +1737,20 @@ moz_gtk_toggle_label_paint(cairo_t *cr, GdkRectangle* rect,
                            GtkWidgetState* state, 
                            gboolean isradio, GtkTextDirection direction)
 {
-    GtkStyleContext *style;
-    GtkWidget *widget;
-
     if (!state->focused)
         return MOZ_GTK_SUCCESS;
 
-    if (isradio) {
-        ensure_radiobutton_widget();
-        widget = gRadiobuttonWidget;
-    } else {
-        ensure_checkbox_widget();
-        widget = gCheckboxWidget;
-    }
-    style = gtk_widget_get_style_context(widget);
-    gtk_style_context_save(style);
-    if (isradio) {
-      gtk_style_context_add_class(style, GTK_STYLE_CLASS_RADIO);
-    } else {
-      gtk_style_context_add_class(style, GTK_STYLE_CLASS_CHECK);
-    }
-    gtk_widget_set_direction(widget, direction);
+    GtkStyleContext *style = ClaimStyleContext(isradio ?
+                                               MOZ_GTK_RADIOBUTTON_CONTAINER :
+                                               MOZ_GTK_CHECKBUTTON_CONTAINER);
 
     gtk_style_context_set_state(style, GetStateFlagsFromGtkWidgetState(state));
+    gtk_style_context_set_direction(style, direction);
+
     gtk_render_focus(style, cr,
                     rect->x, rect->y, rect->width, rect->height);
-    gtk_style_context_restore(style);
+
+    ReleaseStyleContext(style);
 
     return MOZ_GTK_SUCCESS;
 }
@@ -2427,10 +2307,10 @@ moz_gtk_menu_bar_paint(cairo_t *cr, GdkRectangle* rect,
 {
     GtkStyleContext* style;
 
-    ensure_menu_bar_widget();
-    gtk_widget_set_direction(gMenuBarWidget, direction);
+    GtkWidget* widget = GetWidget(MOZ_GTK_MENUBAR);
+    gtk_widget_set_direction(widget, direction);
 
-    style = gtk_widget_get_style_context(gMenuBarWidget);
+    style = gtk_widget_get_style_context(widget);
     gtk_style_context_save(style);
     gtk_style_context_add_class(style, GTK_STYLE_CLASS_MENUBAR);
     gtk_render_background(style, cr, rect->x, rect->y, rect->width, rect->height);
@@ -2446,14 +2326,14 @@ moz_gtk_menu_popup_paint(cairo_t *cr, GdkRectangle* rect,
 {
     GtkStyleContext* style;
 
-    ensure_menu_popup_widget();
-    gtk_widget_set_direction(gMenuPopupWidget, direction);
+    GtkWidget* widget = GetWidget(MOZ_GTK_MENUPOPUP);
+    gtk_widget_set_direction(widget, direction);
 
     // Draw a backing toplevel. This fixes themes that don't provide a menu
     // background, and depend on the GtkMenu's implementation window to provide it.
     moz_gtk_window_paint(cr, rect, direction);
 
-    style = gtk_widget_get_style_context(gMenuPopupWidget);
+    style = gtk_widget_get_style_context(widget);
     gtk_style_context_save(style);
     gtk_style_context_add_class(style, GTK_STYLE_CLASS_MENU);
 
@@ -2517,35 +2397,28 @@ moz_gtk_menu_separator_paint(cairo_t *cr, GdkRectangle* rect,
 
 // See gtk_menu_item_draw() for reference.
 static gint
-moz_gtk_menu_item_paint(cairo_t *cr, GdkRectangle* rect,
-                        GtkWidgetState* state,
-                        gint flags, GtkTextDirection direction)
+moz_gtk_menu_item_paint(WidgetNodeType widget, cairo_t *cr, GdkRectangle* rect,
+                        GtkWidgetState* state, GtkTextDirection direction)
 {
-    GtkStyleContext* style;
-    GtkWidget* item_widget;
-    guint border_width;
     gint x, y, w, h;
 
     if (state->inHover && !state->disabled) {   
-        if (flags & MOZ_TOPLEVEL_MENU_ITEM) {
-            ensure_menu_bar_item_widget();
-            item_widget = gMenuBarItemWidget;
-        } else {
-            ensure_menu_item_widget();
-            item_widget = gMenuItemWidget;
+        guint border_width =
+            gtk_container_get_border_width(GTK_CONTAINER(GetWidget(widget)));
+        GtkStateFlags state_flags = GetStateFlagsFromGtkWidgetState(state);
+        GtkStyleContext* style =
+            ClaimStyleContext(widget, direction, state_flags);
+
+        bool pre_3_6 = gtk_check_version(3, 6, 0) != nullptr;
+        if (pre_3_6) {
+            // GTK+ 3.4 saves the style context and adds the menubar class to
+            // menubar children, but does each of these only when drawing, not
+            // during layout.
+            gtk_style_context_save(style);
+            if (widget == MOZ_GTK_MENUBARITEM) {
+                gtk_style_context_add_class(style, GTK_STYLE_CLASS_MENUBAR);
+            }
         }
-        style = gtk_widget_get_style_context(item_widget);
-        gtk_style_context_save(style);
-
-        if (flags & MOZ_TOPLEVEL_MENU_ITEM) {
-            gtk_style_context_add_class(style, GTK_STYLE_CLASS_MENUBAR);
-        }
-
-        gtk_widget_set_direction(item_widget, direction);
-        gtk_style_context_add_class(style, GTK_STYLE_CLASS_MENUITEM);
-        gtk_style_context_set_state(style, GetStateFlagsFromGtkWidgetState(state));
-
-        border_width = gtk_container_get_border_width(GTK_CONTAINER(item_widget));
 
         x = rect->x + border_width;
         y = rect->y + border_width;
@@ -2554,7 +2427,11 @@ moz_gtk_menu_item_paint(cairo_t *cr, GdkRectangle* rect,
 
         gtk_render_background(style, cr, x, y, w, h);
         gtk_render_frame(style, cr, x, y, w, h);
-        gtk_style_context_restore(style);
+
+        if (pre_3_6) {
+            gtk_style_context_restore(style);
+        }
+        ReleaseStyleContext(style);
     }
 
     return MOZ_GTK_SUCCESS;
@@ -2568,10 +2445,10 @@ moz_gtk_menu_arrow_paint(cairo_t *cr, GdkRectangle* rect,
     GtkStyleContext* style;
     GtkStateFlags state_flags = GetStateFlagsFromGtkWidgetState(state);
 
-    ensure_menu_item_widget();
-    gtk_widget_set_direction(gMenuItemWidget, direction);
+    GtkWidget* widget = GetWidget(MOZ_GTK_MENUITEM);
+    gtk_widget_set_direction(widget, direction);
 
-    style = gtk_widget_get_style_context(gMenuItemWidget);
+    style = gtk_widget_get_style_context(widget);
     gtk_style_context_save(style);
     gtk_style_context_add_class(style, GTK_STYLE_CLASS_MENUITEM);
     gtk_style_context_set_state(style, state_flags);
@@ -2597,7 +2474,7 @@ moz_gtk_check_menu_item_paint(cairo_t *cr, GdkRectangle* rect,
     gint indicator_size, horizontal_padding;
     gint x, y;
 
-    moz_gtk_menu_item_paint(cr, rect, state, FALSE, direction);
+    moz_gtk_menu_item_paint(MOZ_GTK_MENUITEM, cr, rect, state, direction);
 
     ensure_check_menu_item_widget();
     gtk_widget_set_direction(gCheckMenuItemWidget, direction);
@@ -2854,13 +2731,7 @@ moz_gtk_get_widget_border(WidgetNodeType widget, gint* left, gint* top,
     case MOZ_GTK_CHECKBUTTON_CONTAINER:
     case MOZ_GTK_RADIOBUTTON_CONTAINER:
         {
-            if (widget == MOZ_GTK_CHECKBUTTON_CONTAINER) {
-                ensure_checkbox_widget();
-                w = gCheckboxWidget;
-            } else {
-                ensure_radiobutton_widget();
-                w = gRadiobuttonWidget;
-            }
+            w = GetWidget(widget);
             style = gtk_widget_get_style_context(w);
 
             *left = *top = *right = *bottom = gtk_container_get_border_width(GTK_CONTAINER(w));
@@ -2871,19 +2742,17 @@ moz_gtk_get_widget_border(WidgetNodeType widget, gint* left, gint* top,
             return MOZ_GTK_SUCCESS;
         }
     case MOZ_GTK_MENUPOPUP:
-        ensure_menu_popup_widget();
-        w = gMenuPopupWidget;
+        w = GetWidget(MOZ_GTK_MENUPOPUP);
         break;
+    case MOZ_GTK_MENUBARITEM:
     case MOZ_GTK_MENUITEM:
     case MOZ_GTK_CHECKMENUITEM:
     case MOZ_GTK_RADIOMENUITEM:
         {
-            if (widget == MOZ_GTK_MENUITEM) {
-                ensure_menu_item_widget();
-                ensure_menu_bar_item_widget();
-                w = gMenuItemWidget;
-            }
-            else {
+            if (widget == MOZ_GTK_MENUBARITEM || widget == MOZ_GTK_MENUITEM) {
+                // Bug 1274143 for MOZ_GTK_MENUBARITEM
+                w = GetWidget(MOZ_GTK_MENUITEM);
+            } else {
                 ensure_check_menu_item_widget();
                 w = gCheckMenuItemWidget;
             }
@@ -3329,9 +3198,7 @@ moz_gtk_widget_paint(WidgetNodeType widget, cairo_t *cr,
         break;
     case MOZ_GTK_CHECKBUTTON_CONTAINER:
     case MOZ_GTK_RADIOBUTTON_CONTAINER:
-        return moz_gtk_container_paint(cr, rect, state,
-                                       (widget == MOZ_GTK_RADIOBUTTON_CONTAINER),
-                                       direction);
+        return moz_gtk_container_paint(cr, rect, state, widget, direction);
         break;
     case MOZ_GTK_CHECKBUTTON_LABEL:
     case MOZ_GTK_RADIOBUTTON_LABEL:
@@ -3386,9 +3253,9 @@ moz_gtk_widget_paint(WidgetNodeType widget, cairo_t *cr,
         return moz_gtk_menu_separator_paint(cr, rect,
                                             direction);
         break;
+    case MOZ_GTK_MENUBARITEM:
     case MOZ_GTK_MENUITEM:
-        return moz_gtk_menu_item_paint(cr, rect, state, flags,
-                                       direction);
+        return moz_gtk_menu_item_paint(widget, cr, rect, state, direction);
         break;
     case MOZ_GTK_MENUARROW:
         return moz_gtk_menu_arrow_paint(cr, rect, state,
@@ -3463,8 +3330,6 @@ moz_gtk_shutdown()
     gButtonWidget = NULL;
     gToggleButtonWidget = NULL;
     gButtonArrowWidget = NULL;
-    gCheckboxWidget = NULL;
-    gRadiobuttonWidget = NULL;
     gSpinWidget = NULL;
     gHScaleWidget = NULL;
     gVScaleWidget = NULL;
@@ -3484,10 +3349,6 @@ moz_gtk_shutdown()
     gTabWidget = NULL;
     gTextViewWidget = nullptr;
     gTooltipWidget = NULL;
-    gMenuBarWidget = NULL;
-    gMenuBarItemWidget = NULL;
-    gMenuPopupWidget = NULL;
-    gMenuItemWidget = NULL;
     gImageMenuItemWidget = NULL;
     gCheckMenuItemWidget = NULL;
     gTreeViewWidget = NULL;

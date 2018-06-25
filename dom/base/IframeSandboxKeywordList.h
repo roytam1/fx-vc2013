@@ -8,8 +8,6 @@
    times.  It has a list of the sandbox keywords we support, with their
    corresponding sandbox flags. */
 
-#include "nsSandboxFlags.h"
-
 // Each entry has the sandbox keyword as a string, the corresponding nsGkAtoms
 // atom name, and the corresponding sandbox flags.
 SANDBOX_KEYWORD("allow-same-origin", allowsameorigin,  SANDBOXED_ORIGIN)
@@ -22,4 +20,6 @@ SANDBOX_KEYWORD("allow-pointer-lock", allowpointerlock, SANDBOXED_POINTER_LOCK)
 SANDBOX_KEYWORD("allow-orientation-lock", alloworientationlock,
 		SANDBOXED_ORIENTATION_LOCK)
 SANDBOX_KEYWORD("allow-popups", allowpopups, SANDBOXED_AUXILIARY_NAVIGATION)
-
+SANDBOX_KEYWORD("allow-modals", allowmodals, SANDBOXED_MODALS)
+SANDBOX_KEYWORD("allow-popups-to-escape-sandbox", allowpopupstoescapesandbox,
+                SANDBOX_PROPAGATES_TO_AUXILIARY_BROWSING_CONTEXTS)

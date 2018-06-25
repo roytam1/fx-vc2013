@@ -95,8 +95,6 @@ enum eGfxLog {
 // when searching through pref langs, max number of pref langs
 const uint32_t kMaxLenPrefLangList = 32;
 
-extern bool gANGLESupportsD3D11;
-
 #define UNINITIALIZED_VALUE  (-1)
 
 inline const char*
@@ -138,7 +136,8 @@ enum class DeviceResetReason
 
 enum class ForcedDeviceResetReason
 {
-  OPENSHAREDHANDLE = 0
+  OPENSHAREDHANDLE = 0,
+  COMPOSITOR_UPDATED,
 };
 
 class gfxPlatform {
@@ -450,7 +449,6 @@ public:
     static bool OffMainThreadCompositingEnabled();
 
     virtual bool CanUseHardwareVideoDecoding();
-    virtual bool CanUseDirect3D11ANGLE() { return false; }
 
     // Returns a prioritized list of all available compositor backends.
     void GetCompositorBackends(bool useAcceleration, nsTArray<mozilla::layers::LayersBackend>& aBackends);
@@ -635,6 +633,8 @@ public:
     mozilla::layers::LayersBackend GetCompositorBackend() const {
       return mCompositorBackend;
     }
+
+    virtual void CompositorUpdated() {}
 
     // Return information on how child processes should initialize graphics
     // devices. Currently this is only used on Windows.

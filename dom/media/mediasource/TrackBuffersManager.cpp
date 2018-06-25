@@ -99,7 +99,6 @@ TrackBuffersManager::TrackBuffersManager(MediaSourceDecoder* aParentDecoder,
   , mTaskQueue(aParentDecoder->GetDemuxer()->GetTaskQueue())
   , mParentDecoder(new nsMainThreadPtrHolder<MediaSourceDecoder>(aParentDecoder, false /* strict */))
   , mEnded(false)
-  , mDetached(false)
   , mVideoEvictionThreshold(Preferences::GetUint("media.mediasource.eviction_threshold.video",
                                                  100 * 1024 * 1024))
   , mAudioEvictionThreshold(Preferences::GetUint("media.mediasource.eviction_threshold.audio",
@@ -112,7 +111,6 @@ TrackBuffersManager::TrackBuffersManager(MediaSourceDecoder* aParentDecoder,
 
 TrackBuffersManager::~TrackBuffersManager()
 {
-  CancelAllTasks();
   ShutdownDemuxers();
 }
 
@@ -138,108 +136,81 @@ TrackBuffersManager::DoAppendData(RefPtr<MediaByteBuffer> aData,
 {
   RefPtr<AppendBufferTask> task = new AppendBufferTask(aData, aAttributes);
   RefPtr<AppendPromise> p = task->mPromise.Ensure(__func__);
-  mQueue.Push(task);
-
-  ProcessTasks();
+  QueueTask(task);
 
   return p;
 }
 
 void
-TrackBuffersManager::ProcessTasks()
+TrackBuffersManager::QueueTask(SourceBufferTask* aTask)
 {
-  typedef SourceBufferTask::Type Type;
-
-  if (mDetached) {
+  if (!OnTaskQueue()) {
+    GetTaskQueue()->Dispatch(NewRunnableMethod<RefPtr<SourceBufferTask>>(
+      this, &TrackBuffersManager::QueueTask, aTask));
     return;
   }
-
-  if (OnTaskQueue()) {
-    if (mCurrentTask) {
-      // Already have a task pending. ProcessTask will be scheduled once the
-      // current task complete.
-      return;
-    }
-    RefPtr<SourceBufferTask> task = mQueue.Pop();
-    if (!task) {
-      // nothing to do.
-      return;
-    }
-    switch (task->GetType()) {
-      case Type::AppendBuffer:
-        mCurrentTask = task;
-        if (!mInputBuffer) {
-          mInputBuffer = task->As<AppendBufferTask>()->mBuffer;
-        } else if (!mInputBuffer->AppendElements(*task->As<AppendBufferTask>()->mBuffer, fallible)) {
-          RejectAppend(NS_ERROR_OUT_OF_MEMORY, __func__);
-          return;
-        }
-        mSourceBufferAttributes =
-          MakeUnique<SourceBufferAttributes>(task->As<AppendBufferTask>()->mAttributes);
-        mAppendWindow =
-          TimeInterval(TimeUnit::FromSeconds(mSourceBufferAttributes->GetAppendWindowStart()),
-                       TimeUnit::FromSeconds(mSourceBufferAttributes->GetAppendWindowEnd()));
-        ScheduleSegmentParserLoop();
-        break;
-      case Type::RangeRemoval:
-      {
-        bool rv = CodedFrameRemoval(task->As<RangeRemovalTask>()->mRange);
-        task->As<RangeRemovalTask>()->mPromise.Resolve(rv, __func__);
-        break;
-      }
-      case Type::EvictData:
-        DoEvictData(task->As<EvictDataTask>()->mPlaybackTime,
-                    task->As<EvictDataTask>()->mSizeToEvict);
-        break;
-      case Type::Abort:
-        // not handled yet, and probably never.
-        break;
-      case Type::Reset:
-        CompleteResetParserState();
-        break;
-      default:
-        NS_WARNING("Invalid Task");
-    }
-  }
-  GetTaskQueue()->Dispatch(NewRunnableMethod(this, &TrackBuffersManager::ProcessTasks));
+  MOZ_ASSERT(OnTaskQueue());
+  mQueue.Push(aTask);
+  ProcessTasks();
 }
 
-// A PromiseHolder will assert upon destruction if it has a pending promise
-// that hasn't been completed. It is possible that a task didn't get processed
-// due to the owning SourceBuffer having shutdown.
-// We resolve/reject all pending promises and remove all pending tasks from the
-// queue.
 void
-TrackBuffersManager::CancelAllTasks()
+TrackBuffersManager::ProcessTasks()
 {
+  MOZ_ASSERT(OnTaskQueue());
   typedef SourceBufferTask::Type Type;
-  MOZ_DIAGNOSTIC_ASSERT(mDetached);
 
   if (mCurrentTask) {
-    mQueue.Push(mCurrentTask);
-    mCurrentTask = nullptr;
+    // Already have a task pending. ProcessTask will be scheduled once the
+    // current task complete.
+    return;
   }
-
-  RefPtr<SourceBufferTask> task;
-  while ((task = mQueue.Pop())) {
-    switch (task->GetType()) {
-      case Type::AppendBuffer:
-        task->As<AppendBufferTask>()->mPromise.RejectIfExists(NS_ERROR_ABORT, __func__);
-        break;
-      case Type::RangeRemoval:
-        task->As<RangeRemovalTask>()->mPromise.ResolveIfExists(false, __func__);
-        break;
-      case Type::EvictData:
-        break;
-      case Type::Abort:
-        // not handled yet, and probably never.
-        break;
-      case Type::Reset:
-        break;
-      default:
-        NS_WARNING("Invalid Task");
+  RefPtr<SourceBufferTask> task = mQueue.Pop();
+  if (!task) {
+    // nothing to do.
+    return;
+  }
+  switch (task->GetType()) {
+    case Type::AppendBuffer:
+      mCurrentTask = task;
+      if (!mInputBuffer) {
+        mInputBuffer = task->As<AppendBufferTask>()->mBuffer;
+      } else if (!mInputBuffer->AppendElements(*task->As<AppendBufferTask>()->mBuffer, fallible)) {
+        RejectAppend(NS_ERROR_OUT_OF_MEMORY, __func__);
+        return;
+      }
+      mSourceBufferAttributes =
+        MakeUnique<SourceBufferAttributes>(task->As<AppendBufferTask>()->mAttributes);
+      mAppendWindow =
+        TimeInterval(TimeUnit::FromSeconds(mSourceBufferAttributes->GetAppendWindowStart()),
+                     TimeUnit::FromSeconds(mSourceBufferAttributes->GetAppendWindowEnd()));
+      ScheduleSegmentParserLoop();
+      break;
+    case Type::RangeRemoval:
+    {
+      bool rv = CodedFrameRemoval(task->As<RangeRemovalTask>()->mRange);
+      task->As<RangeRemovalTask>()->mPromise.Resolve(rv, __func__);
+      break;
     }
+    case Type::EvictData:
+      DoEvictData(task->As<EvictDataTask>()->mPlaybackTime,
+                  task->As<EvictDataTask>()->mSizeToEvict);
+      break;
+    case Type::Abort:
+      // not handled yet, and probably never.
+      break;
+    case Type::Reset:
+      CompleteResetParserState();
+      break;
+    case Type::Detach:
+      mTaskQueue = nullptr;
+      MOZ_DIAGNOSTIC_ASSERT(mQueue.Length() == 0,
+                            "Detach task must be the last");
+      return;
+    default:
+      NS_WARNING("Invalid Task");
   }
+  GetTaskQueue()->Dispatch(NewRunnableMethod(this, &TrackBuffersManager::ProcessTasks));
 }
 
 // The MSE spec requires that we abort the current SegmentParserLoop
@@ -253,9 +224,7 @@ TrackBuffersManager::AbortAppendData()
   MOZ_ASSERT(NS_IsMainThread());
   MSE_DEBUG("");
 
-  RefPtr<AbortTask> task = new AbortTask();
-  mQueue.Push(task);
-  ProcessTasks();
+  QueueTask(new AbortTask());
 }
 
 void
@@ -268,9 +237,7 @@ TrackBuffersManager::ResetParserState(SourceBufferAttributes& aAttributes)
   // 1. If the append state equals PARSING_MEDIA_SEGMENT and the input buffer contains some complete coded frames, then run the coded frame processing algorithm until all of these complete coded frames have been processed.
   // However, we will wait until all coded frames have been processed regardless
   // of the value of append state.
-  RefPtr<ResetTask> task = new ResetTask();
-  mQueue.Push(task);
-  ProcessTasks();
+  QueueTask(new ResetTask());
 
   // ResetParserState has some synchronous steps that much be performed now.
   // The remaining steps will be performed once the ResetTask gets executed.
@@ -324,9 +291,7 @@ TrackBuffersManager::EvictData(const TimeUnit& aPlaybackTime, int64_t aSize)
 
   MSE_DEBUG("Reaching our size limit, schedule eviction of %lld bytes", toEvict);
 
-  RefPtr<EvictDataTask> task = new EvictDataTask(aPlaybackTime, toEvict);
-  mQueue.Push(task);
-  ProcessTasks();
+  QueueTask(new EvictDataTask(aPlaybackTime, toEvict));
 
   return EvictDataResult::NO_DATA_EVICTED;
 }
@@ -384,7 +349,7 @@ TrackBuffersManager::Detach()
 {
   MOZ_ASSERT(NS_IsMainThread());
   MSE_DEBUG("");
-  mDetached = true;
+  QueueTask(new DetachTask());
 }
 
 void
@@ -522,8 +487,8 @@ TrackBuffersManager::CodedFrameRemovalWithPromise(TimeInterval aInterval)
 
   RefPtr<RangeRemovalTask> task = new RangeRemovalTask(aInterval);
   RefPtr<RangeRemovalPromise> p = task->mPromise.Ensure(__func__);
-  mQueue.Push(task);
-  ProcessTasks();
+  QueueTask(task);
+
   return p;
 }
 
@@ -753,10 +718,6 @@ void
 TrackBuffersManager::NeedMoreData()
 {
   MSE_DEBUG("");
-  if (mDetached) {
-    // We've been detached.
-    return;
-  }
   MOZ_DIAGNOSTIC_ASSERT(mCurrentTask && mCurrentTask->GetType() == SourceBufferTask::Type::AppendBuffer);
   MOZ_DIAGNOSTIC_ASSERT(mSourceBufferAttributes);
 
@@ -773,10 +734,6 @@ void
 TrackBuffersManager::RejectAppend(nsresult aRejectValue, const char* aName)
 {
   MSE_DEBUG("rv=%d", aRejectValue);
-  if (mDetached) {
-    // We've been detached.
-    return;
-  }
   MOZ_DIAGNOSTIC_ASSERT(mCurrentTask && mCurrentTask->GetType() == SourceBufferTask::Type::AppendBuffer);
 
   mCurrentTask->As<AppendBufferTask>()->mPromise.Reject(aRejectValue, __func__);
@@ -788,9 +745,6 @@ TrackBuffersManager::RejectAppend(nsresult aRejectValue, const char* aName)
 void
 TrackBuffersManager::ScheduleSegmentParserLoop()
 {
-  if (mDetached) {
-    return;
-  }
   GetTaskQueue()->Dispatch(NewRunnableMethod(this, &TrackBuffersManager::SegmentParserLoop));
 }
 
@@ -1315,9 +1269,21 @@ TrackBuffersManager::CompleteCodedFrameProcessing()
 
   // 6. Remove the media segment bytes from the beginning of the input buffer.
   // Clear our demuxer from any already processed data.
-  // As we have handled a complete media segment, it is safe to evict all data
-  // from the resource.
-  mCurrentInputBuffer->EvictAll();
+  int64_t safeToEvict = std::min(
+    HasVideo()
+      ? mVideoTracks.mDemuxer->GetEvictionOffset(mVideoTracks.mLastParsedEndTime)
+      : INT64_MAX,
+    HasAudio()
+      ? mAudioTracks.mDemuxer->GetEvictionOffset(mAudioTracks.mLastParsedEndTime)
+      : INT64_MAX);
+  ErrorResult rv;
+  mCurrentInputBuffer->EvictBefore(safeToEvict, rv);
+  if (rv.Failed()) {
+    rv.SuppressException();
+    RejectProcessing(NS_ERROR_OUT_OF_MEMORY, __func__);
+    return;
+  }
+
   mInputDemuxer->NotifyDataRemoved();
   RecreateParser(true);
 
@@ -1688,9 +1654,11 @@ TrackBuffersManager::InsertFrames(TrackBuffer& aSamples,
   // We allow a fuzz factor in our interval of half a frame length,
   // as fuzz is +/- value, giving an effective leeway of a full frame
   // length.
-  TimeIntervals range(aIntervals);
-  range.SetFuzz(trackBuffer.mLongestFrameDuration / 2);
-  trackBuffer.mSanitizedBufferedRanges += range;
+  if (aIntervals.Length()) {
+    TimeIntervals range(aIntervals);
+    range.SetFuzz(trackBuffer.mLongestFrameDuration / 2);
+    trackBuffer.mSanitizedBufferedRanges += range;
+  }
 }
 
 void
@@ -1942,6 +1910,7 @@ TrackBuffersManager::Seek(TrackInfo::TrackType aTrack,
 uint32_t
 TrackBuffersManager::SkipToNextRandomAccessPoint(TrackInfo::TrackType aTrack,
                                                  const TimeUnit& aTimeThreadshold,
+                                                 const media::TimeUnit& aFuzz,
                                                  bool& aFound)
 {
   MOZ_ASSERT(OnTaskQueue());
@@ -1950,23 +1919,103 @@ TrackBuffersManager::SkipToNextRandomAccessPoint(TrackInfo::TrackType aTrack,
   const TrackBuffer& track = GetTrackBuffer(aTrack);
   aFound = false;
 
-  uint32_t nextSampleIndex = trackData.mNextGetSampleIndex.valueOr(0);
-  for (uint32_t i = nextSampleIndex; i < track.Length(); i++) {
-    const RefPtr<MediaRawData>& sample = track[i];
+  // SkipToNextRandomAccessPoint can only be called if aTimeThreadshold is known
+  // to be buffered.
+
+  // So first determine the current position in the track buffer if necessary.
+  if (trackData.mNextGetSampleIndex.isNothing()) {
+    if (trackData.mNextSampleTimecode == TimeUnit()) {
+      // First demux, get first sample.
+      trackData.mNextGetSampleIndex = Some(0u);
+    } else {
+      int32_t pos = FindCurrentPosition(aTrack, aFuzz);
+      if (pos < 0) {
+        return 0;
+      }
+      trackData.mNextGetSampleIndex = Some(uint32_t(pos));
+    }
+  }
+
+  TimeUnit nextSampleTimecode = trackData.mNextSampleTimecode;
+  TimeUnit nextSampleTime = trackData.mNextSampleTime;
+  uint32_t i = trackData.mNextGetSampleIndex.ref();
+  int32_t originalPos = i;
+
+  for (; i < track.Length(); i++) {
+    const MediaRawData* sample =
+      GetSample(aTrack,
+                i,
+                nextSampleTimecode,
+                nextSampleTime,
+                aFuzz);
+    if (!sample) {
+      break;
+    }
     if (sample->mKeyframe &&
         sample->mTime >= aTimeThreadshold.ToMicroseconds()) {
-      trackData.mNextSampleTimecode =
-        TimeUnit::FromMicroseconds(sample->mTimecode);
-      trackData.mNextSampleTime =
-        TimeUnit::FromMicroseconds(sample->mTime);
-      trackData.mNextGetSampleIndex = Some(i);
       aFound = true;
       break;
     }
+    nextSampleTimecode =
+      TimeUnit::FromMicroseconds(sample->mTimecode + sample->mDuration);
+    nextSampleTime = TimeUnit::FromMicroseconds(sample->GetEndTime());
     parsed++;
   }
 
+  // Adjust the next demux time and index so that the next call to
+  // SkipToNextRandomAccessPoint will not count again the parsed sample as
+  // skipped.
+  if (aFound) {
+    trackData.mNextSampleTimecode = nextSampleTimecode;
+    trackData.mNextSampleTime = nextSampleTime;
+    trackData.mNextGetSampleIndex = Some(i);
+  } else if (i > 0) {
+    // Go back to the previous keyframe or the original position so the next
+    // demux can succeed and be decoded.
+    for (int j = i - 1; j >= originalPos; j--) {
+      const RefPtr<MediaRawData>& sample = track[j];
+      if (sample->mKeyframe) {
+        trackData.mNextSampleTimecode =
+          TimeUnit::FromMicroseconds(sample->mTimecode);
+        trackData.mNextSampleTime = TimeUnit::FromMicroseconds(sample->mTime);
+        trackData.mNextGetSampleIndex = Some(uint32_t(j));
+        // We are unable to skip to a keyframe past aTimeThreshold, however
+        // we are speeding up decoding by dropping the unplayable frames.
+        // So we can mark aFound as true.
+        aFound = true;
+        break;
+      }
+      parsed--;
+    }
+  }
   return parsed;
+}
+
+const MediaRawData*
+TrackBuffersManager::GetSample(TrackInfo::TrackType aTrack,
+                               size_t aIndex,
+                               const TimeUnit& aExpectedDts,
+                               const TimeUnit& aExpectedPts,
+                               const TimeUnit& aFuzz)
+{
+  MOZ_ASSERT(OnTaskQueue());
+  const TrackBuffer& track = GetTrackBuffer(aTrack);
+
+  if (aIndex >= track.Length()) {
+    // reached the end.
+    return nullptr;
+  }
+
+  const RefPtr<MediaRawData>& sample = track[aIndex];
+  if (!aIndex || sample->mTimecode <= (aExpectedDts + aFuzz).ToMicroseconds() ||
+      sample->mTime <= (aExpectedPts + aFuzz).ToMicroseconds()) {
+    return sample;
+  }
+
+  // Gap is too big. End of Stream or Waiting for Data.
+  // TODO, check that we have continuous data based on the sanitized buffered
+  // range instead.
+  return nullptr;
 }
 
 already_AddRefed<MediaRawData>
@@ -1980,9 +2029,7 @@ TrackBuffersManager::GetSample(TrackInfo::TrackType aTrack,
 
   aError = false;
 
-  if (!track.Length() ||
-      (trackData.mNextGetSampleIndex.isSome() &&
-       trackData.mNextGetSampleIndex.ref() >= track.Length())) {
+  if (!track.Length()) {
     return nullptr;
   }
   if (trackData.mNextGetSampleIndex.isNothing() &&
@@ -1992,11 +2039,13 @@ TrackBuffersManager::GetSample(TrackInfo::TrackType aTrack,
   }
 
   if (trackData.mNextGetSampleIndex.isSome()) {
-    const RefPtr<MediaRawData>& sample =
-      track[trackData.mNextGetSampleIndex.ref()];
-    if (trackData.mNextGetSampleIndex.ref() &&
-        sample->mTimecode > (trackData.mNextSampleTimecode + aFuzz).ToMicroseconds()) {
-      // Gap is too big. End of Stream or Waiting for Data.
+    const MediaRawData* sample =
+      GetSample(aTrack,
+                trackData.mNextGetSampleIndex.ref(),
+                trackData.mNextSampleTimecode,
+                trackData.mNextSampleTime,
+                aFuzz);
+    if (!sample) {
       return nullptr;
     }
 
@@ -2015,6 +2064,37 @@ TrackBuffersManager::GetSample(TrackInfo::TrackType aTrack,
   }
 
   // Our previous index has been overwritten, attempt to find the new one.
+  int32_t pos = FindCurrentPosition(aTrack, aFuzz);
+  if (pos < 0) {
+    MSE_DEBUG("Couldn't find sample (pts:%lld dts:%lld)",
+              trackData.mNextSampleTime.ToMicroseconds(),
+              trackData.mNextSampleTimecode.ToMicroseconds());
+    return nullptr;
+  }
+
+  const RefPtr<MediaRawData>& sample = track[pos];
+  RefPtr<MediaRawData> p = sample->Clone();
+  if (!p) {
+    // OOM
+    aError = true;
+    return nullptr;
+  }
+  trackData.mNextGetSampleIndex = Some(uint32_t(pos)+1);
+  trackData.mNextSampleTimecode =
+    TimeUnit::FromMicroseconds(sample->mTimecode + sample->mDuration);
+  trackData.mNextSampleTime =
+    TimeUnit::FromMicroseconds(sample->GetEndTime());
+  return p.forget();
+}
+
+int32_t
+TrackBuffersManager::FindCurrentPosition(TrackInfo::TrackType aTrack,
+                                         const TimeUnit& aFuzz)
+{
+  MOZ_ASSERT(OnTaskQueue());
+  auto& trackData = GetTracksData(aTrack);
+  const TrackBuffer& track = GetTrackBuffer(aTrack);
+
   for (uint32_t i = 0; i < track.Length(); i++) {
     const RefPtr<MediaRawData>& sample = track[i];
     TimeInterval sampleInterval{
@@ -2023,23 +2103,13 @@ TrackBuffersManager::GetSample(TrackInfo::TrackType aTrack,
       aFuzz};
 
     if (sampleInterval.ContainsWithStrictEnd(trackData.mNextSampleTimecode)) {
-      RefPtr<MediaRawData> p = sample->Clone();
-      if (!p) {
-        // OOM
-        aError = true;
-        return nullptr;
-      }
-      trackData.mNextGetSampleIndex = Some(i+1);
-      trackData.mNextSampleTimecode = sampleInterval.mEnd;
-      trackData.mNextSampleTime =
-        TimeUnit::FromMicroseconds(sample->GetEndTime());
-      return p.forget();
+      return i;
     }
   }
 
   // We couldn't find our sample by decode timestamp. Attempt to find it using
   // presentation timestamp. There will likely be small jerkiness.
-    for (uint32_t i = 0; i < track.Length(); i++) {
+  for (uint32_t i = 0; i < track.Length(); i++) {
     const RefPtr<MediaRawData>& sample = track[i];
     TimeInterval sampleInterval{
       TimeUnit::FromMicroseconds(sample->mTime),
@@ -2047,42 +2117,31 @@ TrackBuffersManager::GetSample(TrackInfo::TrackType aTrack,
       aFuzz};
 
     if (sampleInterval.ContainsWithStrictEnd(trackData.mNextSampleTimecode)) {
-      RefPtr<MediaRawData> p = sample->Clone();
-      if (!p) {
-        // OOM
-        aError = true;
-        return nullptr;
-      }
-      trackData.mNextGetSampleIndex = Some(i+1);
-      // Estimate decode timestamp of the next sample.
-      trackData.mNextSampleTimecode = sampleInterval.mEnd;
-      trackData.mNextSampleTime =
-        TimeUnit::FromMicroseconds(sample->GetEndTime());
-      return p.forget();
+      return i;
     }
   }
 
-  MSE_DEBUG("Couldn't find sample (pts:%lld dts:%lld)",
-             trackData.mNextSampleTime.ToMicroseconds(),
-            trackData.mNextSampleTimecode.ToMicroseconds());
-  return nullptr;
+  // Still not found.
+  return -1;
 }
 
 TimeUnit
 TrackBuffersManager::GetNextRandomAccessPoint(TrackInfo::TrackType aTrack,
                                               const TimeUnit& aFuzz)
 {
+  MOZ_ASSERT(OnTaskQueue());
   auto& trackData = GetTracksData(aTrack);
   MOZ_ASSERT(trackData.mNextGetSampleIndex.isSome());
   const TrackBuffersManager::TrackBuffer& track = GetTrackBuffer(aTrack);
 
   uint32_t i = trackData.mNextGetSampleIndex.ref();
   TimeUnit nextSampleTimecode = trackData.mNextSampleTimecode;
+  TimeUnit nextSampleTime = trackData.mNextSampleTime;
 
   for (; i < track.Length(); i++) {
-    const RefPtr<MediaRawData>& sample = track[i];
-    if (sample->mTimecode > (nextSampleTimecode + aFuzz).ToMicroseconds()) {
-      // Gap is too big. End of Stream or Waiting for Data.
+    const MediaRawData* sample =
+      GetSample(aTrack, i, nextSampleTimecode, nextSampleTime, aFuzz);
+    if (!sample) {
       break;
     }
     if (sample->mKeyframe) {
@@ -2090,6 +2149,7 @@ TrackBuffersManager::GetNextRandomAccessPoint(TrackInfo::TrackType aTrack,
     }
     nextSampleTimecode =
       TimeUnit::FromMicroseconds(sample->mTimecode + sample->mDuration);
+    nextSampleTime = TimeUnit::FromMicroseconds(sample->GetEndTime());
   }
   return TimeUnit::FromInfinity();
 }

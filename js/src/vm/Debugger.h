@@ -706,7 +706,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
      * whenever possible.
      */
     template <typename ReferentVariant, typename Referent, typename Map>
-    JSObject* wrapVariantReferent(JSContext* cx, Map& map, CrossCompartmentKey::Kind keyKind,
+    JSObject* wrapVariantReferent(JSContext* cx, Map& map, Handle<CrossCompartmentKey> key,
                                   Handle<ReferentVariant> referent);
     JSObject* wrapVariantReferent(JSContext* cx, Handle<DebuggerScriptReferent> referent);
     JSObject* wrapVariantReferent(JSContext* cx, Handle<DebuggerSourceReferent> referent);
@@ -1026,6 +1026,35 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
   private:
     Debugger(const Debugger&) = delete;
     Debugger & operator=(const Debugger&) = delete;
+};
+
+class DebuggerObject : public NativeObject
+{
+  public:
+    static const Class class_;
+
+    static NativeObject* initClass(JSContext* cx, HandleObject obj, HandleObject debugCtor);
+    static DebuggerObject* create(JSContext* cx, HandleObject proto, HandleObject obj,
+                                  HandleNativeObject debugger);
+
+    static bool isExtensible(JSContext* cx, Handle<DebuggerObject*> object, bool& result);
+    static bool isSealed(JSContext* cx, Handle<DebuggerObject*> object, bool& result);
+    static bool isFrozen(JSContext* cx, Handle<DebuggerObject*> object, bool& result);
+
+  private:
+    static const unsigned RESERVED_SLOTS = 1;
+
+    static const JSPropertySpec properties_[];
+#ifdef SPIDERMONKEY_PROMISE
+    static const JSPropertySpec promiseProperties_[];
+#endif // SPIDERMONKEY_PROMISE
+    static const JSFunctionSpec methods_[];
+
+    JSObject* referent() const {
+        JSObject* obj = (JSObject*) getPrivate();
+        MOZ_ASSERT(obj);
+        return obj;
+    }
 };
 
 class BreakpointSite {

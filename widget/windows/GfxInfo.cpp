@@ -844,16 +844,16 @@ GfxInfo::GetGfxDriverInfo()
       DRIVER_LESS_THAN, V(8,17,11,8265), "FEATURE_FAILURE_NV_W7", "182.65" );
 
     /*
-     * AMD/ATI entries
+     * AMD/ATI entries. 8.56.1.15 is the driver that shipped with Windows 7 RTM
      */
     APPEND_TO_DRIVER_BLOCKLIST( DRIVER_OS_ALL,
       (nsAString&) GfxDriverInfo::GetDeviceVendor(VendorATI), GfxDriverInfo::allDevices,
       GfxDriverInfo::allFeatures, nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
-      DRIVER_LESS_THAN, V(8,62,0,0), "FEATURE_FAILURE_AMD1", "9.6" );
+      DRIVER_LESS_THAN, V(8,56,1,15), "FEATURE_FAILURE_AMD1", "8.56.1.15" );
     APPEND_TO_DRIVER_BLOCKLIST( DRIVER_OS_ALL,
       (nsAString&) GfxDriverInfo::GetDeviceVendor(VendorAMD), GfxDriverInfo::allDevices,
       GfxDriverInfo::allFeatures, nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
-      DRIVER_LESS_THAN, V(8,62,0,0), "FEATURE_FAILURE_AMD2", "9.6" );
+      DRIVER_LESS_THAN, V(8,56,1,15), "FEATURE_FAILURE_AMD2", "8.56.1.15" );
 
     // Bug 1099252
     APPEND_TO_DRIVER_BLOCKLIST2( DRIVER_OS_WINDOWS_7,
@@ -1159,7 +1159,8 @@ GfxInfo::GetFeatureStatusImpl(int32_t aFeature,
         NS_FAILED(GetAdapterDriverVersion(adapterDriverVersionString)))
     {
       aFailureId = "FEATURE_FAILURE_GET_ADAPTER";
-      return NS_ERROR_FAILURE;
+      *aStatus = FEATURE_BLOCKED_DEVICE;
+      return NS_OK;
     }
 
     if (!adapterVendorID.Equals(GfxDriverInfo::GetDeviceVendor(VendorIntel), nsCaseInsensitiveStringComparator()) &&
@@ -1175,15 +1176,16 @@ GfxInfo::GetFeatureStatusImpl(int32_t aFeature,
         !adapterVendorID.LowerCaseEqualsLiteral("0xabab") &&
         !adapterVendorID.LowerCaseEqualsLiteral("0xdcdc"))
     {
-      *aStatus = FEATURE_BLOCKED_DEVICE;
       aFailureId = "FEATURE_FAILURE_TEST";
+      *aStatus = FEATURE_BLOCKED_DEVICE;
       return NS_OK;
     }
 
     uint64_t driverVersion;
     if (!ParseDriverVersion(adapterDriverVersionString, &driverVersion)) {
       aFailureId = "FEATURE_FAILURE_PARSE_DRIVER";
-      return NS_ERROR_FAILURE;
+      *aStatus = FEATURE_BLOCKED_DRIVER_VERSION;
+      return NS_OK;
     }
 
     // special-case the WinXP test slaves: they have out-of-date drivers, but we still want to
@@ -1258,12 +1260,16 @@ GfxInfo::FindMonitors(JSContext* aCx, JS::HandleObject aOutArray)
 void
 GfxInfo::DescribeFeatures(JSContext* aCx, JS::Handle<JSObject*> aObj)
 {
+  // Add the platform neutral features
+  GfxInfoBase::DescribeFeatures(aCx, aObj);
+
   JS::Rooted<JSObject*> obj(aCx);
 
   gfxWindowsPlatform* platform = gfxWindowsPlatform::GetPlatform();
 
   gfx::FeatureStatus d3d11 = gfxConfig::GetValue(Feature::D3D11_COMPOSITING);
-  if (!InitFeatureObject(aCx, aObj, "d3d11", d3d11, &obj)) {
+  if (!InitFeatureObject(aCx, aObj, "d3d11", FEATURE_DIRECT3D_11_ANGLE,
+                         Some(d3d11), &obj)) {
     return;
   }
   if (d3d11 == gfx::FeatureStatus::Available) {
@@ -1290,7 +1296,8 @@ GfxInfo::DescribeFeatures(JSContext* aCx, JS::Handle<JSObject*> aObj)
   }
 
   gfx::FeatureStatus d2d = gfxConfig::GetValue(Feature::DIRECT2D);
-  if (!InitFeatureObject(aCx, aObj, "d2d", d2d, &obj)) {
+  if (!InitFeatureObject(aCx, aObj, "d2d", nsIGfxInfo::FEATURE_DIRECT2D,
+                         Some(d2d), &obj)) {
     return;
   }
   {

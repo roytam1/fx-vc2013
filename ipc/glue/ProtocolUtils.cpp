@@ -24,6 +24,8 @@
 #if defined(MOZ_CRASHREPORTER) && defined(XP_WIN)
 #include "aclapi.h"
 #include "sddl.h"
+
+#include "mozilla/TypeTraits.h"
 #endif
 
 using namespace IPC;
@@ -33,6 +35,17 @@ using base::ProcessHandle;
 using base::ProcessId;
 
 namespace mozilla {
+
+#if defined(MOZ_CRASHREPORTER) && defined(XP_WIN)
+// Generate RAII classes for LPTSTR and PSECURITY_DESCRIPTOR.
+MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedLPTStr, \
+                                          RemovePointer<LPTSTR>::Type, \
+                                          ::LocalFree)
+MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedPSecurityDescriptor, \
+                                          RemovePointer<PSECURITY_DESCRIPTOR>::Type, \
+                                          ::LocalFree)
+#endif
+
 namespace ipc {
 
 ProtocolCloneContext::ProtocolCloneContext()
@@ -293,8 +306,15 @@ bool DuplicateHandle(HANDLE aSourceHandle,
 #endif
 
   // Finally, see if we already have access to the process.
-  ScopedProcessHandle targetProcess;
-  if (!base::OpenProcessHandle(aTargetProcessId, &targetProcess.rwget())) {
+  ScopedProcessHandle targetProcess(OpenProcess(PROCESS_DUP_HANDLE,
+                                                FALSE,
+                                                aTargetProcessId));
+  if (!targetProcess) {
+#ifdef MOZ_CRASH_REPORTER
+    CrashReporter::AnnotateCrashReport(
+      NS_LITERAL_CSTRING("IPCTransportFailureReason"),
+      NS_LITERAL_CSTRING("Failed to open target process."));
+#endif
     return false;
   }
 
@@ -325,7 +345,8 @@ void
 AnnotateProcessInformation(base::ProcessId aPid)
 {
 #ifdef XP_WIN
-  HANDLE processHandle = OpenProcess(READ_CONTROL|PROCESS_QUERY_INFORMATION, FALSE, aPid);
+  ScopedProcessHandle processHandle(
+    OpenProcess(READ_CONTROL|PROCESS_QUERY_INFORMATION, FALSE, aPid));
   if (!processHandle) {
     CrashReporter::AnnotateCrashReport(
       NS_LITERAL_CSTRING("IPCExtraSystemError"),
@@ -354,7 +375,7 @@ AnnotateProcessInformation(base::ProcessId aPid)
     return;
   }
 
-  PSECURITY_DESCRIPTOR secDesc = nullptr;
+  ScopedPSecurityDescriptor secDesc(nullptr);
   PSID ownerSid = nullptr;
   DWORD rv = ::GetSecurityInfo(processHandle,
                                SE_KERNEL_OBJECT,
@@ -363,7 +384,7 @@ AnnotateProcessInformation(base::ProcessId aPid)
                                nullptr,
                                nullptr,
                                nullptr,
-                               &secDesc);
+                               &secDesc.rwget());
   if (rv != ERROR_SUCCESS) {
     // GetSecurityInfo() failed.
     CrashReporter::AnnotateCrashReport(
@@ -375,30 +396,26 @@ AnnotateProcessInformation(base::ProcessId aPid)
     return;
   }
 
-  LPTSTR ownerSidStr = nullptr;
+  ScopedLPTStr ownerSidStr(nullptr);
   nsString annotation{};
   annotation.AppendLiteral("Owner: ");
-  if (::ConvertSidToStringSid(ownerSid, &ownerSidStr)) {
-    annotation.Append(ownerSidStr);
+  if (::ConvertSidToStringSid(ownerSid, &ownerSidStr.rwget())) {
+    annotation.Append(ownerSidStr.get());
   }
-  ::LocalFree(ownerSidStr);
 
-  LPTSTR secDescStr = nullptr;
+  ScopedLPTStr secDescStr(nullptr);
   annotation.AppendLiteral(", Security Descriptor: ");
   if (::ConvertSecurityDescriptorToStringSecurityDescriptor(secDesc,
                                                             SDDL_REVISION_1,
                                                             DACL_SECURITY_INFORMATION,
-                                                            &secDescStr,
+                                                            &secDescStr.rwget(),
                                                             nullptr)) {
-    annotation.Append(secDescStr);
+    annotation.Append(secDescStr.get());
   }
 
   CrashReporter::AnnotateCrashReport(
     NS_LITERAL_CSTRING("IPCExtraSystemError"),
     NS_ConvertUTF16toUTF8(annotation));
-
-  ::LocalFree(secDescStr);
-  ::LocalFree(secDesc);
 #endif
 }
 #endif
@@ -463,6 +480,48 @@ void
 LogicError(const char* aMsg)
 {
   NS_RUNTIMEABORT(aMsg);
+}
+
+void
+ActorIdReadError(const char* aActorDescription)
+{
+  nsPrintfCString message("Error deserializing id for %s", aActorDescription);
+  NS_RUNTIMEABORT(message.get());
+}
+
+void
+BadActorIdError(const char* aActorDescription)
+{
+  nsPrintfCString message("bad id for %s", aActorDescription);
+  ProtocolErrorBreakpoint(message.get());
+}
+
+void
+ActorLookupError(const char* aActorDescription)
+{
+  nsPrintfCString message("could not lookup id for %s", aActorDescription);
+  ProtocolErrorBreakpoint(message.get());
+}
+
+void
+MismatchedActorTypeError(const char* aActorDescription)
+{
+  nsPrintfCString message("actor that should be of type %s has different type",
+                          aActorDescription);
+  ProtocolErrorBreakpoint(message.get());
+}
+
+void
+UnionTypeReadError(const char* aUnionName)
+{
+  nsPrintfCString message("error deserializing type of union %s", aUnionName);
+  NS_RUNTIMEABORT(message.get());
+}
+
+void ArrayLengthReadError(const char* aElementName)
+{
+  nsPrintfCString message("error deserializing length of %s[]", aElementName);
+  NS_RUNTIMEABORT(message.get());
 }
 
 } // namespace ipc

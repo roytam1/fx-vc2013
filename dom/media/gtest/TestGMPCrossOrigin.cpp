@@ -13,6 +13,7 @@
 #include "GMPVideoEncoderProxy.h"
 #include "GMPDecryptorProxy.h"
 #include "GMPServiceParent.h"
+#include "MediaPrefs.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsIFile.h"
 #include "nsISimpleEnumerator.h"
@@ -33,6 +34,7 @@ struct GMPTestRunner
 {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPTestRunner)
 
+  GMPTestRunner() { MediaPrefs::GetSingleton(); }
   void DoTest(void (GMPTestRunner::*aTestMethod)(GMPTestMonitor&));
   void RunTestGMPTestCodec1(GMPTestMonitor& aMonitor);
   void RunTestGMPTestCodec2(GMPTestMonitor& aMonitor);
@@ -1349,7 +1351,6 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
   void KeyStatusChanged(const nsCString& aSessionId,
                         const nsTArray<uint8_t>& aKeyId,
                         GMPMediaKeyStatus aStatus) override { }
-  void SetCaps(uint64_t aCaps) override {}
   void Decrypted(uint32_t aId,
                  GMPErr aResult,
                  const nsTArray<uint8_t>& aDecryptedData) override { }

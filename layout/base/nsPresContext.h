@@ -851,6 +851,9 @@ public:
                                 nsIFrame * aFrame);
 #endif
 
+  void RestyledElement() {
+    ++mElementsRestyled;
+  }
   void ConstructedFrame() {
     ++mFramesConstructed;
   }
@@ -858,6 +861,9 @@ public:
     ++mFramesReflowed;
   }
 
+  uint64_t ElementsRestyledCount() {
+    return mElementsRestyled;
+  }
   uint64_t FramesConstructedCount() {
     return mFramesConstructed;
   }
@@ -1033,7 +1039,6 @@ public:
   }
 
   bool IsRootContentDocument() const;
-  bool IsCrossProcessRootContentDocument();
 
   bool IsGlyph() const {
     return mIsGlyph;
@@ -1303,6 +1308,7 @@ protected:
 
   // Counters for tests and tools that want to detect frame construction
   // or reflow.
+  uint64_t              mElementsRestyled;
   uint64_t              mFramesConstructed;
   uint64_t              mFramesReflowed;
 

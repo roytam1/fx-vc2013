@@ -943,6 +943,8 @@ public:
 
   NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(RefusedAsyncAnimationProperty, bool)
 
+  NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(FragStretchBSizeProperty, nscoord)
+
   NS_DECLARE_FRAME_PROPERTY_WITH_DTOR(GenConProperty, ContentArray,
                                       DestroyContentArray)
 
@@ -1158,6 +1160,7 @@ protected:
    * Called when a frame transitions between visibility states (for example,
    * from nonvisible to visible, or from visible to nonvisible).
    *
+   * @param aOldVisibility    The previous visibility state.
    * @param aNewVisibility    The new visibility state.
    * @param aNonvisibleAction A requested action if the frame has become
    *                          nonvisible. If Nothing(), no action is
@@ -1169,7 +1172,8 @@ protected:
    * Subclasses which override this method should call their parent class's
    * implementation.
    */
-  virtual void OnVisibilityChange(Visibility aNewVisibility,
+  virtual void OnVisibilityChange(Visibility aOldVisibility,
+                                  Visibility aNewVisibility,
                                   Maybe<OnNonvisible> aNonvisibleAction = Nothing());
 
 public:
@@ -1892,10 +1896,10 @@ public:
      * shrink-wrap (e.g., it's floating, absolutely positioned, or
      * inline-block). */
     eShrinkWrap =        1 << 0,
-    /* Set if we'd like to compute our 'auto' height, regardless of our actual
-     * computed value of 'height'. (e.g. to get an intrinsic height for flex
+    /* Set if we'd like to compute our 'auto' bsize, regardless of our actual
+     * corresponding computed value. (e.g. to get an intrinsic height for flex
      * items with "min-height: auto" to use during flexbox layout.) */
-    eUseAutoHeight =     1 << 1
+    eUseAutoBSize =      1 << 1
   };
 
   /**

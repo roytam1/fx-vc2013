@@ -53,7 +53,7 @@ Fail(JSContext* cx, const char* str)
 }
 
 static bool
-Fail(JSContext* cx, Decoder& d, const char* str)
+Fail(JSContext* cx, const Decoder& d, const char* str)
 {
     uint32_t offset = d.currentOffset();
     char offsetStr[sizeof "4294967295"];
@@ -83,7 +83,7 @@ class ValidatingPolicy : public ExprIterPolicy
     static const bool Validate = true;
 
     // Fail by printing a message, using the contains JSContext.
-    bool fail(const char* str, Decoder& d) {
+    bool fail(const char* str, const Decoder& d) {
         return Fail(cx_, d, str);
     }
 
@@ -97,20 +97,17 @@ class FunctionDecoder
     const ModuleGenerator& mg_;
     ValidatingExprIter iter_;
     const ValTypeVector& locals_;
-    const DeclaredSig& sig_;
 
   public:
     FunctionDecoder(JSContext* cx, const ModuleGenerator& mg, Decoder& d,
-                    uint32_t funcIndex, const ValTypeVector& locals)
+                    const ValTypeVector& locals)
       : mg_(mg),
         iter_(ValidatingPolicy(cx), d),
-        locals_(locals),
-        sig_(mg.funcSig(funcIndex))
+        locals_(locals)
     {}
     const ModuleGenerator& mg() const { return mg_; }
     ValidatingExprIter& iter() { return iter_; }
     const ValTypeVector& locals() const { return locals_; }
-    const DeclaredSig& sig() const { return sig_; }
 
     bool checkI64Support() {
         if (!IsI64Implemented())
@@ -285,7 +282,7 @@ DecodeExpr(FunctionDecoder& f)
       case Expr::I64Clz:
       case Expr::I64Ctz:
       case Expr::I64Popcnt:
-        return f.iter().notYetImplemented("i64") &&
+        return f.checkI64Support() &&
                f.iter().readUnary(ValType::I64, nullptr);
       case Expr::F32Abs:
       case Expr::F32Neg:
@@ -398,8 +395,6 @@ DecodeExpr(FunctionDecoder& f)
       case Expr::I32Eqz:
         return f.iter().readConversion(ValType::I32, ValType::I32, nullptr);
       case Expr::I64Eqz:
-        return f.checkI64Support() &&
-               f.iter().readConversion(ValType::I64, ValType::I32, nullptr);
       case Expr::I32WrapI64:
         return f.checkI64Support() &&
                f.iter().readConversion(ValType::I64, ValType::I32, nullptr);
@@ -792,19 +787,23 @@ DecodeMemorySection(JSContext* cx, Decoder& d, ModuleGenerator& mg, MutableHandl
     if (!d.readVarU32(&initialSizePages))
         return Fail(cx, d, "expected initial memory size");
 
-    CheckedInt<int32_t> initialSize = initialSizePages;
+    CheckedInt<uint32_t> initialSize = initialSizePages;
     initialSize *= PageSize;
     if (!initialSize.isValid())
         return Fail(cx, d, "initial memory size too big");
+
+    // ArrayBufferObject can't currently allocate more than INT32_MAX bytes.
+    if (initialSize.value() > uint32_t(INT32_MAX))
+        return false;
 
     uint32_t maxSizePages;
     if (!d.readVarU32(&maxSizePages))
         return Fail(cx, d, "expected initial memory size");
 
-    CheckedInt<int32_t> maxSize = maxSizePages;
+    CheckedInt<uint32_t> maxSize = maxSizePages;
     maxSize *= PageSize;
     if (!maxSize.isValid())
-        return Fail(cx, d, "initial memory size too big");
+        return Fail(cx, d, "maximum memory size too big");
 
     uint8_t exported;
     if (!d.readFixedU8(&exported))
@@ -824,7 +823,7 @@ DecodeMemorySection(JSContext* cx, Decoder& d, ModuleGenerator& mg, MutableHandl
     if (!heap)
         return false;
 
-    mg.initHeapUsage(HeapUsage::Unshared);
+    mg.initHeapUsage(HeapUsage::Unshared, initialSize.value());
     return true;
 }
 
@@ -934,7 +933,8 @@ DecodeFunctionBody(JSContext* cx, Decoder& d, ModuleGenerator& mg, uint32_t func
         return false;
 
     ValTypeVector locals;
-    if (!locals.appendAll(mg.funcSig(funcIndex).args()))
+    const DeclaredSig& sig = mg.funcSig(funcIndex);
+    if (!locals.appendAll(sig.args()))
         return false;
 
     if (!DecodeLocalEntries(d, &locals))
@@ -945,7 +945,7 @@ DecodeFunctionBody(JSContext* cx, Decoder& d, ModuleGenerator& mg, uint32_t func
             return false;
     }
 
-    FunctionDecoder f(cx, mg, d, funcIndex, locals);
+    FunctionDecoder f(cx, mg, d, locals);
 
     if (!f.iter().readFunctionStart())
         return false;
@@ -955,7 +955,7 @@ DecodeFunctionBody(JSContext* cx, Decoder& d, ModuleGenerator& mg, uint32_t func
             return false;
     }
 
-    if (!f.iter().readFunctionEnd(f.sig().ret(), nullptr))
+    if (!f.iter().readFunctionEnd(sig.ret(), nullptr))
         return false;
 
     if (d.currentPosition() != bodyEnd)

@@ -1329,6 +1329,7 @@ class SSLTunnel:
                              (loc.host, loc.port, self.sslPort, redirhost))
 
             if self.useSSLTunnelExts and option in (
+                    'tls1',
                     'ssl3',
                     'rc4',
                     'failHandshake'):
@@ -2189,6 +2190,12 @@ class MochitestDesktop(MochitestBase):
     def runTests(self, options):
         """ Prepare, configure, run tests and cleanup """
 
+        # a11y and chrome tests don't run with e10s enabled in CI. Need to set
+        # this here since |mach mochitest| sets the flavor after argument parsing.
+        if options.a11y or options.chrome:
+            options.e10s = False
+        mozinfo.update({"e10s": options.e10s})  # for test manifest parsing.
+
         self.setTestRoot(options)
 
         # Despite our efforts to clean up servers started by this script, in practice
@@ -2446,6 +2453,7 @@ class MochitestDesktop(MochitestBase):
         self.message_logger.dump_buffered()
         self.message_logger.buffering = False
         self.log.info(error_message)
+        self.log.warning("Force-terminating active process(es).");
 
         browser_pid = browser_pid or proc.pid
         child_pids = self.extract_child_pids(processLog, browser_pid)

@@ -1406,8 +1406,16 @@ LIRGenerator::visitClz(MClz* ins)
 {
     MDefinition* num = ins->num();
 
-    LClzI* lir = new(alloc()) LClzI(useRegisterAtStart(num));
-    define(lir, ins);
+    MOZ_ASSERT(IsIntType(ins->type()));
+
+    if (ins->type() == MIRType::Int32) {
+        LClzI* lir = new(alloc()) LClzI(useRegisterAtStart(num));
+        define(lir, ins);
+        return;
+    }
+
+    auto* lir = new(alloc()) LClzI64(useInt64RegisterAtStart(num));
+    defineInt64(lir, ins);
 }
 
 void
@@ -1415,8 +1423,16 @@ LIRGenerator::visitCtz(MCtz* ins)
 {
     MDefinition* num = ins->num();
 
-    LCtzI* lir = new(alloc()) LCtzI(useRegisterAtStart(num));
-    define(lir, ins);
+    MOZ_ASSERT(IsIntType(ins->type()));
+
+    if (ins->type() == MIRType::Int32) {
+        LCtzI* lir = new(alloc()) LCtzI(useRegisterAtStart(num));
+        define(lir, ins);
+        return;
+    }
+
+    auto* lir = new(alloc()) LCtzI64(useInt64RegisterAtStart(num));
+    defineInt64(lir, ins);
 }
 
 void
@@ -1424,8 +1440,16 @@ LIRGenerator::visitPopcnt(MPopcnt* ins)
 {
     MDefinition* num = ins->num();
 
-    LPopcntI* lir = new(alloc()) LPopcntI(useRegisterAtStart(num), temp());
-    define(lir, ins);
+    MOZ_ASSERT(IsIntType(ins->type()));
+
+    if (ins->type() == MIRType::Int32) {
+        LPopcntI* lir = new(alloc()) LPopcntI(useRegisterAtStart(num), temp());
+        define(lir, ins);
+        return;
+    }
+
+    auto* lir = new(alloc()) LPopcntI64(useInt64RegisterAtStart(num), tempInt64());
+    defineInt64(lir, ins);
 }
 
 void
@@ -1637,7 +1661,6 @@ LIRGenerator::visitSub(MSub* ins)
 
     if (ins->specialization() == MIRType::Int64) {
         MOZ_ASSERT(lhs->type() == MIRType::Int64);
-        ReorderCommutative(&lhs, &rhs, ins);
         LSubI64* lir = new(alloc()) LSubI64;
         lowerForALUInt64(lir, ins, lhs, rhs);
         return;
@@ -2914,6 +2937,9 @@ LIRGenerator::visitNot(MNot* ins)
       }
       case MIRType::Int32:
         define(new(alloc()) LNotI(useRegisterAtStart(op)), ins);
+        break;
+      case MIRType::Int64:
+        define(new(alloc()) LNotI64(useInt64RegisterAtStart(op)), ins);
         break;
       case MIRType::Double:
         define(new(alloc()) LNotD(useRegister(op)), ins);
@@ -4282,24 +4308,8 @@ LIRGenerator::visitSimdUnbox(MSimdUnbox* ins)
     MOZ_ASSERT(ins->input()->type() == MIRType::Object);
     MOZ_ASSERT(IsSimdType(ins->type()));
     LUse in = useRegister(ins->input());
-
-    BailoutKind kind;
-    switch (ins->type()) {
-      case MIRType::Bool32x4:
-        kind = Bailout_NonSimdBool32x4Input;
-        break;
-      case MIRType::Int32x4:
-        kind = Bailout_NonSimdInt32x4Input;
-        break;
-      case MIRType::Float32x4:
-        kind = Bailout_NonSimdFloat32x4Input;
-        break;
-      default:
-        MOZ_CRASH("Unexpected SIMD Type.");
-    }
-
     LSimdUnbox* lir = new(alloc()) LSimdUnbox(in, temp());
-    assignSnapshot(lir, kind);
+    assignSnapshot(lir, Bailout_UnexpectedSimdInput);
     define(lir, ins);
 }
 
@@ -4309,12 +4319,16 @@ LIRGenerator::visitSimdConstant(MSimdConstant* ins)
     MOZ_ASSERT(IsSimdType(ins->type()));
 
     switch (ins->type()) {
-      case MIRType::Bool32x4:
+      case MIRType::Int8x16:
+      case MIRType::Int16x8:
       case MIRType::Int32x4:
-        define(new(alloc()) LInt32x4(), ins);
+      case MIRType::Bool8x16:
+      case MIRType::Bool16x8:
+      case MIRType::Bool32x4:
+        define(new(alloc()) LSimd128Int(), ins);
         break;
       case MIRType::Float32x4:
-        define(new(alloc()) LFloat32x4(), ins);
+        define(new(alloc()) LSimd128Float(), ins);
         break;
       default:
         MOZ_CRASH("Unknown SIMD kind when generating constant");
@@ -4339,7 +4353,7 @@ LIRGenerator::visitSimdConvert(MSimdConvert* ins)
           }
           case SimdSign::Unsigned: {
               LFloat32x4ToUint32x4* lir =
-                new (alloc()) LFloat32x4ToUint32x4(use, temp(), temp(LDefinition::INT32X4));
+                new (alloc()) LFloat32x4ToUint32x4(use, temp(), temp(LDefinition::SIMD128INT));
               if (!gen->compilingAsmJS())
                   assignSnapshot(lir, Bailout_BoundsCheck);
               define(lir, ins);
@@ -4504,9 +4518,9 @@ LIRGenerator::visitSimdShuffle(MSimdShuffle* ins)
     MOZ_ASSERT(IsSimdType(ins->type()));
     MOZ_ASSERT(ins->type() == MIRType::Int32x4 || ins->type() == MIRType::Float32x4);
 
-    bool zFromLHS = ins->laneZ() < 4;
-    bool wFromLHS = ins->laneW() < 4;
-    uint32_t lanesFromLHS = (ins->laneX() < 4) + (ins->laneY() < 4) + zFromLHS + wFromLHS;
+    bool zFromLHS = ins->lane(2) < 4;
+    bool wFromLHS = ins->lane(3) < 4;
+    uint32_t lanesFromLHS = (ins->lane(0) < 4) + (ins->lane(1) < 4) + zFromLHS + wFromLHS;
 
     LSimdShuffle* lir = new (alloc()) LSimdShuffle();
     lowerForFPU(lir, ins, ins->lhs(), ins->rhs());

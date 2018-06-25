@@ -770,6 +770,10 @@ class Descriptor(DescriptorProvider):
                 self.interface.parent)
 
     def hasThreadChecks(self):
+        # isExposedConditionally does not necessarily imply thread checks
+        # (since at least [SecureContext] is independent of them), but we're
+        # only used to decide whether to include nsThreadUtils.h, so we don't
+        # worry about that.
         return ((self.isExposedConditionally() and
                  not self.interface.isExposedInWindow()) or
                 self.interface.isExposedInSomeButNotAllWorkers())
@@ -809,6 +813,28 @@ class Descriptor(DescriptorProvider):
         """
         return (self.interface.getExtendedAttribute("Global") or
                 self.interface.getExtendedAttribute("PrimaryGlobal"))
+
+    @property
+    def namedPropertiesEnumerable(self):
+        """
+        Returns whether this interface should have enumerable named properties
+        """
+        assert self.proxy
+        assert self.supportsNamedProperties()
+        iface = self.interface
+        while iface:
+            if iface.getExtendedAttribute("LegacyUnenumerableNamedProperties"):
+                return False
+            iface = iface.parent
+        return True
+
+    @property
+    def registersGlobalNamesOnWindow(self):
+        return (not self.interface.isExternal() and
+                self.interface.hasInterfaceObject() and
+                not self.workers and
+                self.interface.isExposedInWindow() and
+                self.register)
 
 
 # Some utility methods

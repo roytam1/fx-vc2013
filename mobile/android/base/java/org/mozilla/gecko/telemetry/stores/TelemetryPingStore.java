@@ -19,11 +19,14 @@ import java.util.Set;
  * An implementation of this class is expected to be thread-safe. Additionally,
  * multiple instances can be created and run simultaneously so they must be able
  * to synchronize state (or be stateless!).
+ *
+ * The pings in {@link #getAllPings()} and {@link #maybePrunePings()} are returned in the
+ * same order in order to guarantee consistent results.
  */
 public interface TelemetryPingStore extends Parcelable {
 
     /**
-     * @return a list of all the telemetry pings in the store that are ready for upload.
+     * @return a list of all the telemetry pings in the store that are ready for upload, ascending oldest to newest.
      */
     List<TelemetryPing> getAllPings();
 
@@ -37,6 +40,7 @@ public interface TelemetryPingStore extends Parcelable {
 
     /**
      * Removes telemetry pings from the store if there are too many pings or they take up too much space.
+     * Pings should be removed from oldest to newest.
      */
     void maybePrunePings();
 
@@ -44,8 +48,7 @@ public interface TelemetryPingStore extends Parcelable {
      * Removes the successfully uploaded pings from the database and performs another other actions necessary
      * for when upload is completed.
      *
-     * @param successfulRemoveIDs unique ids of pings passed to {@link #storePing(TelemetryPing)} that were
-     *                            successfully uploaded
+     * @param successfulRemoveIDs doc ids of pings that were successfully uploaded
      */
-    void onUploadAttemptComplete(Set<Integer> successfulRemoveIDs);
+    void onUploadAttemptComplete(Set<String> successfulRemoveIDs);
 }
