@@ -2030,8 +2030,9 @@ EventStateManager::GetContentViewer(nsIContentViewer** aCv)
 {
   *aCv = nullptr;
 
-  nsCOMPtr<nsPIDOMWindowOuter> rootWindow;
-  rootWindow = mDocument->GetWindow()->GetPrivateRoot();
+  nsPIDOMWindowOuter* window = mDocument->GetWindow();
+  if (!window) return NS_ERROR_FAILURE;
+  nsCOMPtr<nsPIDOMWindowOuter> rootWindow = window->GetPrivateRoot();
   if (!rootWindow) return NS_ERROR_FAILURE;
 
   TabChild* tabChild = TabChild::GetFrom(rootWindow);
@@ -4398,6 +4399,9 @@ EventStateManager::SetPointerLock(nsIWidget* aWidget,
     // pre-pointerlock position, so that the synthetic mouse event reports
     // no movement.
     sLastRefPoint = mPreLockPoint;
+    // Reset SynthCenteringPoint to invalid so that next time we start
+    // locking pointer, it has its initial value.
+    sSynthCenteringPoint = kInvalidRefPoint;
     if (aWidget) {
       aWidget->SynthesizeNativeMouseMove(
         mPreLockPoint + aWidget->WidgetToScreenOffset(), nullptr);
