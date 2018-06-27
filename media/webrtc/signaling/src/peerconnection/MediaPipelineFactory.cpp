@@ -867,24 +867,18 @@ MediaPipelineFactory::ConfigureVideoCodecMode(const JsepTrack& aTrack,
 {
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
   RefPtr<LocalSourceStreamInfo> stream =
-    mPCMedia->GetLocalStreamById(aTrack.GetStreamId());
+    mPCMedia->GetLocalStreamByTrackId(aTrack.GetTrackId());
 
   //get video track
+  RefPtr<mozilla::dom::MediaStreamTrack> track =
+    stream->GetTrackById(aTrack.GetTrackId());
+
   RefPtr<mozilla::dom::VideoStreamTrack> videotrack =
-    stream->GetVideoTrackByTrackId(aTrack.GetTrackId());
+    track->AsVideoStreamTrack();
 
   if (!videotrack) {
     MOZ_MTLOG(ML_ERROR, "video track not available");
     return NS_ERROR_FAILURE;
-  }
-
-  //get video source type
-  RefPtr<DOMMediaStream> mediastream =
-    mPCMedia->GetLocalStreamById(aTrack.GetStreamId())->GetMediaStream();
-
-  DOMLocalMediaStream* domLocalStream = mediastream->AsDOMLocalMediaStream();
-  if (!domLocalStream) {
-    return NS_OK;
   }
 
   dom::MediaSourceEnum source = videotrack->GetSource().GetMediaSource();
