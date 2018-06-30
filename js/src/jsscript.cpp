@@ -3409,7 +3409,7 @@ js::DescribeScriptedCallerForCompilation(JSContext* cx, MutableHandleScript mayb
         return;
     }
 
-    NonBuiltinFrameIter iter(cx);
+    NonBuiltinFrameIter iter(cx, FrameIter::STOP_AT_SAVED);
 
     if (iter.done()) {
         maybeScript.set(nullptr);
