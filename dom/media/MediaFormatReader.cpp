@@ -1160,7 +1160,6 @@ MediaFormatReader::Update(TrackType aTrack)
         Some(TimeInterval(TimeUnit::FromMicroseconds(output->mTime),
                           TimeUnit::FromMicroseconds(output->GetEndTime())));
       decoder.mNumSamplesOutputTotal++;
-      decoder.mNumSamplesOutputTotalSinceTelemetry++;
       ReturnOutput(output, aTrack);
       // We have a decoded sample ready to be returned.
       if (aTrack == TrackType::kVideoTrack) {
@@ -1205,6 +1204,15 @@ MediaFormatReader::Update(TrackType aTrack)
         LOGV("Nothing more to do");
         return;
       }
+    } else if (decoder.mDemuxEOS && !decoder.mNeedDraining &&
+               !decoder.mDraining && !decoder.mDrainComplete &&
+               decoder.mQueuedSamples.IsEmpty()) {
+      // It is possible to transition from WAITING_FOR_DATA directly to EOS
+      // state during the internal seek; in which case no draining would occur.
+      // There is no more samples left to be decoded and we are already in
+      // EOS state. We can immediately reject the data promise.
+      LOG("Rejecting %s promise: EOS", TrackTypeToStr(aTrack));
+      decoder.RejectPromise(END_OF_STREAM, __func__);
     }
   }
 
