@@ -125,7 +125,7 @@ var SessionCookiesInternal = {
       if (!Services.cookies.cookieExists(cookieObj)) {
         Services.cookies.add(cookie.host, cookie.path || "", cookie.name || "",
                              cookie.value, !!cookie.secure, !!cookie.httponly,
-                             /* isSession = */ true, expiry, cookie.originAttributes);
+                             /* isSession = */ true, expiry, cookie.originAttributes || {});
       }
     }
   },
