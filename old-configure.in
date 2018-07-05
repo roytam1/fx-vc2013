@@ -1186,6 +1186,7 @@ case "$target" in
     MKSHLIB='$(CXX) $(CXXFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -o $@'
     MKCSHLIB='$(CC) $(CFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -o $@'
     MOZ_OPTIMIZE_FLAGS="-O3"
+    CXXFLAGS="$CXXFLAGS -stdlib=libc++"
     DLL_SUFFIX=".dylib"
     DSO_LDOPTS=''
     STRIP_FLAGS="$STRIP_FLAGS -x -S"
@@ -2774,18 +2775,6 @@ MOZ_ARG_WITH_STRING(adjust-sdk-keyfile,
 [  --with-adjust-sdk-keyfile=file   Use the app token contained in the given keyfile for Adjust SDK requests],
   MOZ_INSTALL_TRACKING_ADJUST_SDK_APP_TOKEN=`cat $withval`)
 AC_SUBST(MOZ_INSTALL_TRACKING_ADJUST_SDK_APP_TOKEN)
-
-# Whether this APK is destined for resource constrained devices.
-# We want this in mobile/android/confvars.sh, so it goes early.
-MOZ_ARG_ENABLE_BOOL(android-resource-constrained,
-[  --enable-android-resource-constrained
-                          Exclude hi-res images and similar from the final APK],
-    MOZ_ANDROID_RESOURCE_CONSTRAINED=1)
-
-if test -n "$MOZ_ANDROID_RESOURCE_CONSTRAINED"; then
-    AC_DEFINE(MOZ_ANDROID_RESOURCE_CONSTRAINED)
-fi
-AC_SUBST(MOZ_ANDROID_RESOURCE_CONSTRAINED)
 
 # Optional Firefox for Android partner distribution directory.
 MOZ_ARG_WITH_STRING(android-distribution-directory,

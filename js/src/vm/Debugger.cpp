@@ -7747,6 +7747,7 @@ DebuggerObject_checkThis(JSContext* cx, const CallArgs& args, const char* fnname
 
 #define THIS_DEBUGOBJECT_PROMISE(cx, argc, vp, fnname, args, obj)                   \
    THIS_DEBUGOBJECT_REFERENT(cx, argc, vp, fnname, args, obj);                      \
+   obj = CheckedUnwrap(obj);                                                        \
    if (!obj->is<PromiseObject>()) {                                                 \
        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_NOT_EXPECTED_TYPE,  \
                             "Debugger", "Promise", obj->getClass()->name);          \
@@ -7756,6 +7757,7 @@ DebuggerObject_checkThis(JSContext* cx, const CallArgs& args, const char* fnname
 
 #define THIS_DEBUGOBJECT_OWNER_PROMISE(cx, argc, vp, fnname, args, dbg, obj)        \
    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, fnname, args, dbg, obj);           \
+   obj = CheckedUnwrap(obj);                                                        \
    if (!obj->is<PromiseObject>()) {                                                 \
        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_NOT_EXPECTED_TYPE,  \
                             "Debugger", "Promise", obj->getClass()->name);          \
@@ -8056,6 +8058,7 @@ DebuggerObject_getIsPromise(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT_REFERENT(cx, argc, vp, "get isPromise", args, refobj);
 
+    refobj = CheckedUnwrap(refobj);
     args.rval().setBoolean(refobj->is<PromiseObject>());
     return true;
 }
@@ -8161,7 +8164,7 @@ DebuggerObject_getPromiseID(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT_PROMISE(cx, argc, vp, "get promiseID", args, refobj);
 
-    args.rval().setNumber(promise->getID());
+    args.rval().setNumber(double(promise->getID()));
     return true;
 }
 
@@ -8799,6 +8802,9 @@ DebuggerObject::initClass(JSContext* cx, HandleObject obj, HandleObject debugCto
     RootedNativeObject objectProto(cx, InitClass(cx, debugCtor, objProto, &class_,
                                                  DebuggerObject_construct, 0, properties_,
                                                  methods_, nullptr, nullptr));
+
+    if (!objectProto)
+        return nullptr;
 
 #ifdef SPIDERMONKEY_PROMISE
     if (!DefinePropertiesAndFunctions(cx, objectProto, promiseProperties_, nullptr))
