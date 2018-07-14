@@ -7,7 +7,7 @@
 #include "base/pickle.h"
 
 #include "mozilla/Alignment.h"
-#include "mozilla/Endian.h"
+#include "mozilla/EndianUtils.h"
 #include "mozilla/TypeTraits.h"
 
 #include <stdlib.h>
