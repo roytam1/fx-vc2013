@@ -2566,9 +2566,6 @@ pref("layout.css.control-characters.visible", false);
 pref("layout.css.control-characters.visible", true);
 #endif
 
-// Is support for text-emphasis enabled?
-pref("layout.css.text-emphasis.enabled", true);
-
 // pref for which side vertical scrollbars should be on
 // 0 = end-side in UI direction
 // 1 = end-side in document/content direction
@@ -5396,4 +5393,12 @@ pref("layout.css.color-adjust.enabled", true);
 pref("dom.node.rootNode.enabled", false);
 #else
 pref("dom.node.rootNode.enabled", true);
+#endif
+
+// Once bug 1276272 is resolved, we will trun this preference to default ON in
+// non-release channels.
+#ifdef RELEASE_BUILD
+pref("media.seekToNextFrame.enabled", false);
+#else
+pref("media.seekToNextFrame.enabled", false);
 #endif

@@ -4,8 +4,7 @@
 
 "use strict";
 
-// Tests the behaviour of adding a new rule to the rule view using the context
-// menu and the various inplace-editor behaviours in the new rule editor.
+// Tests adding a new rule using the add rule button.
 
 const TEST_URI = `
   <style type="text/css">
@@ -39,34 +38,6 @@ add_task(function* () {
   for (let data of TEST_DATA) {
     let {node, expected} = data;
     yield selectNode(node, inspector);
-    yield testNewRule(inspector, view, expected);
+    yield addNewRuleAndDismissEditor(inspector, view, expected, 1);
   }
 });
-
-function* testNewRule(inspector, view, expected) {
-  info("Adding a new rule and expecting a ruleview-changed event");
-  let onRuleViewChanged = view.once("ruleview-changed");
-  yield addNewRule(inspector, view);
-  yield onRuleViewChanged;
-
-  let ruleEditor = getRuleViewRuleEditor(view, 1);
-  let editor = ruleEditor.selectorText.ownerDocument.activeElement;
-  is(editor.value, expected,
-     "Selector editor value is as expected: " + expected);
-
-  info("Entering the escape key");
-  EventUtils.synthesizeKey("VK_ESCAPE", {});
-
-  is(ruleEditor.selectorText.textContent, expected,
-     "Selector text value is as expected: " + expected);
-
-  info("Adding new properties to new rule: " + expected);
-  onRuleViewChanged = view.once("ruleview-changed");
-  ruleEditor.addProperty("font-weight", "bold", "");
-  yield onRuleViewChanged;
-
-  let textProps = ruleEditor.rule.textProps;
-  let lastRule = textProps[textProps.length - 1];
-  is(lastRule.name, "font-weight", "Last rule name is font-weight");
-  is(lastRule.value, "bold", "Last rule value is bold");
-}
