@@ -75,11 +75,34 @@ public:
         m_formatter.oneByteOp(OP_NOP);
     }
 
-    void twoByteNop()
+    MOZ_MUST_USE JmpSrc
+    twoByteNop()
     {
         spew("nop (2 byte)");
+        JmpSrc r(m_formatter.size());
         m_formatter.prefix(PRE_OPERAND_SIZE);
         m_formatter.oneByteOp(OP_NOP);
+        return r;
+    }
+
+    static void patchTwoByteNopToJump(uint8_t* jump, uint8_t* target)
+    {
+        // Note: the offset is relative to the address of the instruction after
+        // the jump which is two bytes.
+        ptrdiff_t rel8 = target - jump - 2;
+        MOZ_RELEASE_ASSERT(rel8 >= INT8_MIN && rel8 <= INT8_MAX);
+        MOZ_RELEASE_ASSERT(jump[0] == PRE_OPERAND_SIZE);
+        MOZ_RELEASE_ASSERT(jump[1] == OP_NOP);
+        jump[0] = OP_JMP_rel8;
+        jump[1] = rel8;
+    }
+
+    static void patchJumpToTwoByteNop(uint8_t* jump)
+    {
+        // See twoByteNop.
+        MOZ_RELEASE_ASSERT(jump[0] == OP_JMP_rel8);
+        jump[0] = PRE_OPERAND_SIZE;
+        jump[1] = OP_NOP;
     }
 
     /*
@@ -1823,17 +1846,17 @@ public:
     void cmovz_rr(RegisterID src, RegisterID dst)
     {
         spew("cmovz     %s, %s", GPReg16Name(src), GPReg32Name(dst));
-        m_formatter.twoByteOp(OP2_CMOVZ_GvqpEvqp, src, dst);
+        m_formatter.twoByteOp(OP2_CMOVZ_GvEv, src, dst);
     }
     void cmovz_mr(int32_t offset, RegisterID base, RegisterID dst)
     {
         spew("cmovz     " MEM_ob ", %s", ADDR_ob(offset, base), GPReg32Name(dst));
-        m_formatter.twoByteOp(OP2_CMOVZ_GvqpEvqp, offset, base, dst);
+        m_formatter.twoByteOp(OP2_CMOVZ_GvEv, offset, base, dst);
     }
     void cmovz_mr(int32_t offset, RegisterID base, RegisterID index, int scale, RegisterID dst)
     {
         spew("cmovz     " MEM_obs ", %s", ADDR_obs(offset, base, index, scale), GPReg32Name(dst));
-        m_formatter.twoByteOp(OP2_CMOVZ_GvqpEvqp, offset, base, index, scale, dst);
+        m_formatter.twoByteOp(OP2_CMOVZ_GvEv, offset, base, index, scale, dst);
     }
 
     void movl_rr(RegisterID src, RegisterID dst)

@@ -167,6 +167,13 @@ pref("dom.performance.enable_user_timing_logging", false);
 // Enable notification of performance timing
 pref("dom.performance.enable_notify_performance_timing", false);
 
+// Enable Performance Observer API
+#ifdef NIGHTLY_BUILD
+pref("dom.enable_performance_observer", true);
+#else
+pref("dom.enable_performance_observer", false);
+#endif
+
 // Whether the Gamepad API is enabled
 pref("dom.gamepad.enabled", true);
 #ifdef RELEASE_BUILD
@@ -4861,6 +4868,8 @@ pref("dom.vr.oculus.enabled", true);
 pref("dom.vr.oculus050.enabled", true);
 // Cardboard VR device is disabled by default
 pref("dom.vr.cardboard.enabled", false);
+// OSVR device
+pref("dom.vr.osvr.enabled", false);
 // 0 = never; 1 = only if real devices aren't there; 2 = always
 pref("dom.vr.add-test-devices", 0);
 // Pose prediction reduces latency effects by returning future predicted HMD
@@ -4871,6 +4880,11 @@ pref("dom.vr.poseprediction.enabled", false);
 // true = show the VR textures in our compositing output; false = don't.
 // true might have performance impact
 pref("gfx.vr.mirror-textures", false);
+// path to OSVR DLLs
+pref("gfx.vr.osvr.utilLibPath", "");
+pref("gfx.vr.osvr.commonLibPath", "");
+pref("gfx.vr.osvr.clientLibPath", "");
+pref("gfx.vr.osvr.clientKitLibPath", "");
 
 // MMS UA Profile settings
 pref("wap.UAProf.url", "");
