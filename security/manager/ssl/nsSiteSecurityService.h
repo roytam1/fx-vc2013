@@ -109,7 +109,7 @@ public:
   void ToString(nsCString &aString);
 };
 
-struct nsSTSPreload;
+class nsSTSPreload;
 
 class nsSiteSecurityService : public nsISiteSecurityService
                             , public nsIObserver
